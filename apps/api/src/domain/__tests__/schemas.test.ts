@@ -25,6 +25,7 @@ it("validates turn-scripted scenario templates", () => {
     templateId: "tpl-1",
     topic: "restaurant",
     level: "A2",
+    seedPrompt: "Bienvenido",
     turnPlan: [
       { turnIndex: 0, speakerRole: "A", promptType: "user", objectiveIds: ["o1"] }
     ],

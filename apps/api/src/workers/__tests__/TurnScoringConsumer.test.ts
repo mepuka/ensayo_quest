@@ -47,6 +47,7 @@ it("scores turn and emits ScoreUpdated", async () => {
         templateId: "template-1",
         topic: "travel",
         level: "A2",
+        seedPrompt: "Hola",
         turnPlan: [],
         roleRubrics: [
           {

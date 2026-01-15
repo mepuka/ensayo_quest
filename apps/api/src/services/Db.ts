@@ -11,8 +11,11 @@ export class DbError extends Schema.TaggedError<DbError>()("DbError", {
 }) {}
 
 export interface DbService {
-  createRoom: (roomId: string) => Effect.Effect<void, DbError, never>;
+  createRoom: (roomId: string, templateId: string) => Effect.Effect<void, DbError, never>;
   insertTurn: (submission: TurnSubmission) => Effect.Effect<void, DbError, never>;
+  getRoomTemplateId: (roomId: string) => Effect.Effect<string, DbError, never>;
+  getNextTurnIndex: (roomId: string) => Effect.Effect<number, DbError, never>;
+  findScenarioTemplate: (input: { topic: string; level: string }) => Effect.Effect<ScenarioTemplate, DbError, never>;
   getTurnSubmission: (turnId: string) => Effect.Effect<TurnSubmission, DbError, never>;
   getScenarioTemplate: (templateId: string) => Effect.Effect<ScenarioTemplate, DbError, never>;
   updateTurnAudioKey: (input: { turnId: string; audioKey: string }) => Effect.Effect<void, DbError, never>;
@@ -50,8 +53,77 @@ export const DbLive = Layer.effect(
       Schema.parseJson(ScenarioTemplate)
     );
     return {
-      createRoom: (roomId: string) =>
-        run(queries.insertRoom, [roomId, "unknown", Date.now()]),
+      createRoom: (roomId: string, templateId: string) =>
+        run(queries.insertRoom, [roomId, templateId, Date.now()]),
+      getRoomTemplateId: (roomId: string) =>
+        Effect.tryPromise({
+          try: () =>
+            env.DB.prepare(queries.selectRoomTemplateId)
+              .bind(roomId)
+              .first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.flatMap((row) =>
+            row
+              ? Effect.succeed(row)
+              : Effect.fail(new DbError({ reason: "room_not_found" }))
+          ),
+          Effect.flatMap((row) =>
+            Effect.try({
+              try: () => {
+                const record = row as Record<string, unknown>;
+                return String(record.template_id ?? "");
+              },
+              catch: (cause) => new DbError({ reason: String(cause) })
+            })
+          )
+        ),
+      getNextTurnIndex: (roomId: string) =>
+        Effect.tryPromise({
+          try: () =>
+            env.DB.prepare(queries.selectNextTurnIndex)
+              .bind(roomId)
+              .first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.flatMap((row) =>
+            row
+              ? Effect.succeed(row)
+              : Effect.fail(new DbError({ reason: "turn_index_unavailable" }))
+          ),
+          Effect.flatMap((row) =>
+            Effect.try({
+              try: () => {
+                const record = row as Record<string, unknown>;
+                return Number(record.next_index ?? 0);
+              },
+              catch: (cause) => new DbError({ reason: String(cause) })
+            })
+          )
+        ),
+      findScenarioTemplate: (input: { topic: string; level: string }) =>
+        Effect.tryPromise({
+          try: () =>
+            env.DB.prepare(queries.selectScenarioTemplateByTopicLevel)
+              .bind(input.topic, input.level)
+              .first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.flatMap((row) =>
+            row
+              ? Effect.succeed(row)
+              : Effect.fail(new DbError({ reason: "scenario_not_found" }))
+          ),
+          Effect.flatMap((row) =>
+            Effect.try({
+              try: () => {
+                const record = row as Record<string, unknown>;
+                return decodeScenarioTemplate(String(record.template_json ?? ""));
+              },
+              catch: (cause) => new DbError({ reason: String(cause) })
+            })
+          )
+        ),
       insertTurn: (submission: TurnSubmission) =>
         run(queries.insertTurn, [
           submission.turnId,

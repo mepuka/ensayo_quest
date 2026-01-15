@@ -26,7 +26,7 @@ it("writes room and turn records via D1 binding", async () => {
   });
   const program = Effect.gen(function* () {
     const db = yield* Db;
-    yield* db.createRoom("room-1");
+    yield* db.createRoom("room-1", "template-1");
     yield* db.insertTurn({
       roomId: "room-1",
       turnId: "turn-1",
@@ -40,6 +40,7 @@ it("writes room and turn records via D1 binding", async () => {
   await Effect.runPromise(program.pipe(Effect.provide(Layer.provideMerge(envLayer)(DbLive))));
   expect(calls[0]?.sql).toBe(queries.insertRoom);
   expect(calls[0]?.params[0]).toBe("room-1");
+  expect(calls[0]?.params[1]).toBe("template-1");
   expect(calls[1]?.sql).toBe(queries.insertTurn);
   expect(calls[1]?.params[0]).toBe("turn-1");
   expect(calls[1]?.params[2]).toBe("tmp");
@@ -76,5 +77,6 @@ it("writes turn score updates via D1 binding", async () => {
   });
   await Effect.runPromise(program.pipe(Effect.provide(Layer.provideMerge(envLayer)(DbLive))));
   expect(calls[0]?.sql).toBe(queries.updateTurnScore);
+  expect(queries.updateTurnScore).toContain("ON CONFLICT");
   expect(calls[0]?.params[0]).toBe("turn-9");
 });

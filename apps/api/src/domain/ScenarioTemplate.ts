@@ -6,6 +6,7 @@ export class ScenarioTemplate extends Schema.Class<ScenarioTemplate>("ScenarioTe
   templateId: Schema.String,
   topic: Schema.String,
   level: Schema.String,
+  seedPrompt: Schema.String,
   turnPlan: Schema.Array(TurnPlan),
   roleRubrics: Schema.Array(RoleRubric)
 }) {}

@@ -1,3 +1,6 @@
+import { Effect } from "effect";
+import * as SqlClient from "@effect/sql/SqlClient";
+
 export const roomSchemaSql = `
 PRAGMA foreign_keys = ON;
 
@@ -39,3 +42,12 @@ CREATE TABLE IF NOT EXISTS room_turn_prompts (
 CREATE INDEX IF NOT EXISTS idx_room_turns_room_id ON room_turns(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_turns_status ON room_turns(status);
 `;
+
+export const applyRoomSchema = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  for (const statement of roomSchemaSql.split(";")) {
+    const trimmed = statement.trim();
+    if (!trimmed) continue;
+    yield* sql.unsafe(trimmed).withoutTransform;
+  }
+});

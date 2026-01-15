@@ -3,11 +3,7 @@ import * as Schema from "effect/Schema";
 import type { MessageBatch } from "@cloudflare/workers-types";
 import { encodeJson } from "./http/codec";
 import { handlers } from "./http/handlers";
-import {
-  CreateRoomRequest,
-  CreateRoomResponse,
-  TurnAudioResponse
-} from "./domain/HttpProtocol";
+import { CreateRoomRequest, CreateRoomResponse, TurnAudioResponse } from "./domain/HttpProtocol";
 import type { CloudflareEnv } from "./services/Env";
 import { Env } from "./services/Env";
 import { DbLive } from "./services/Db";
@@ -19,10 +15,7 @@ import { ScoringConfigLive, ScoringServiceLive } from "./services/ScoringService
 import { AudioBucketLive } from "./services/CloudflareLayers";
 import { makeTurnScoringConsumer } from "./workers/TurnScoringConsumer";
 import { RoomDurableObject } from "./durable-objects/RoomDurableObject";
-
-const ErrorResponse = Schema.Struct({
-  error: Schema.String
-});
+import { toHttpErrorResponse } from "./http/errorResponse";
 
 const SubmitTurnResponse = Schema.Struct({
   turnId: Schema.String,
@@ -62,8 +55,7 @@ const jsonResponse = <A, I>(schema: Schema.Schema<A, I>, value: A, status = 200)
     headers: { "Content-Type": "application/json" }
   });
 
-const errorResponse = (error: unknown, status = 400) =>
-  jsonResponse(ErrorResponse, { error: String(error) }, status);
+const errorResponse = (error: unknown) => toHttpErrorResponse(error);
 
 const wsUrlForRoom = (request: Request, roomId: string) => {
   const url = new URL(request.url);
@@ -90,8 +82,8 @@ export default {
     const appLayer = makeAppLayer(env);
     const program = Effect.gen(function* () {
       if (method === "POST" && segments.length === 2 && segments[0] === "api" && segments[1] === "rooms") {
-        yield* decodeBody(CreateRoomRequest, request);
-        const created = yield* handlers.createRoom();
+        const input = yield* decodeBody(CreateRoomRequest, request);
+        const created = yield* handlers.createRoom(input);
         const response = new CreateRoomResponse({
           roomId: created.roomId,
           wsUrl: wsUrlForRoom(request, created.roomId),
@@ -106,8 +98,9 @@ export default {
         segments[1] === "rooms" &&
         segments[3] === "turns"
       ) {
+        const roomId = segments[2];
         const body = yield* decodeUnknownBody(request);
-        const result = yield* handlers.submitTurn(body);
+        const result = yield* handlers.submitTurn(roomId, body);
         return jsonResponse(SubmitTurnResponse, result, 202);
       }
       if (

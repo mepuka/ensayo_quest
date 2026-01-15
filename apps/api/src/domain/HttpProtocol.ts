@@ -16,9 +16,15 @@ export class TurnAudioResponse extends Schema.Class<TurnAudioResponse>("TurnAudi
   audioKey: Schema.String
 }) {}
 
+export class HttpErrorResponse extends Schema.Class<HttpErrorResponse>("HttpErrorResponse")({
+  code: Schema.String,
+  message: Schema.String,
+  retryable: Schema.Boolean
+}) {}
+
 export class HttpTurnSubmission extends Schema.Class<HttpTurnSubmission>("HttpTurnSubmission")({
   roomId: Schema.String,
-  turnId: Schema.String,
+  turnId: Schema.optional(Schema.String),
   transcript: Schema.String,
   language: Schema.String,
   clientTimestamp: Schema.Number,
@@ -37,5 +43,7 @@ export const decodeCreateRoomResponse = Schema.decodeUnknownSync(CreateRoomRespo
 export const encodeCreateRoomResponse = Schema.encodeSync(CreateRoomResponse);
 export const decodeTurnAudioResponse = Schema.decodeUnknownSync(TurnAudioResponse);
 export const encodeTurnAudioResponse = Schema.encodeSync(TurnAudioResponse);
+export const decodeHttpErrorResponse = Schema.decodeUnknownSync(HttpErrorResponse);
+export const encodeHttpErrorResponse = Schema.encodeSync(HttpErrorResponse);
 export const decodeHttpTurnSubmission = Schema.decodeUnknownSync(HttpTurnSubmission);
 export const encodeHttpTurnSubmission = Schema.encodeSync(HttpTurnSubmission);
