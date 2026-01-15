@@ -19,6 +19,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@effect-atom/atom-react": "^0.4.5",
     "@effect/ai": "^0.33.2",
     "@effect/ai-anthropic": "^0.23.0",
     "@effect/ai-google": "^0.12.1",

@@ -5,6 +5,7 @@
     "": {
       "name": "ensayo_quest",
       "dependencies": {
+        "@effect-atom/atom-react": "^0.4.5",
         "@effect/ai": "^0.33.2",
         "@effect/ai-anthropic": "^0.23.0",
         "@effect/ai-google": "^0.12.1",
@@ -35,6 +36,10 @@
     "@anthropic-ai/tokenizer": ["@anthropic-ai/tokenizer@0.0.4", "", { "dependencies": { "@types/node": "^18.11.18", "tiktoken": "^1.0.10" } }, "sha512-EHRKbxlxlc8W4KCBEseByJ7YwyYCmgu9OyN59H9+IYIGPoKv8tXyQXinkeGDI+cI8Tiuz9wk2jZb/kK7AyvL7g=="],
 
     "@cloudflare/workers-types": ["@cloudflare/workers-types@4.20260115.0", "", {}, "sha512-vi68ZODh6m9fH9wdBOzDsyWgrYRIZbzZEAGGkvFn4b1FQSukxaWS8NAtSd/h9mL4gVK9hG8FEYq/jipdOo4RJg=="],
+
+    "@effect-atom/atom": ["@effect-atom/atom@0.4.13", "", { "peerDependencies": { "@effect/experimental": "^0.57.0", "@effect/platform": "^0.93.0", "@effect/rpc": "^0.72.1", "effect": "^3.19.0" } }, "sha512-wYCPDg/vN2IWTqxho7kTTSivh//V2TSAcdkQvLXMJWww8YzhcCGmCiDpT6cefyNXvHj+qZrqYB54mrUqG6EYCA=="],
+
+    "@effect-atom/atom-react": ["@effect-atom/atom-react@0.4.5", "", { "dependencies": { "@effect-atom/atom": "^0.4.12" }, "peerDependencies": { "effect": "^3.19", "react": ">=18 <20", "scheduler": "*" } }, "sha512-N29Lj3jZ4cnSGrubFwWuYmJHkxr7VyExDVnz6ZQJ+jhpBd+p3u0OJGXKI1pAZk7shs+FjO2SbklIx7Y9NZ4wPQ=="],
 
     "@effect/ai": ["@effect/ai@0.33.2", "", { "dependencies": { "find-my-way-ts": "^0.1.6" }, "peerDependencies": { "@effect/experimental": "^0.58.0", "@effect/platform": "^0.94.1", "@effect/rpc": "^0.73.0", "effect": "^3.19.14" } }, "sha512-iJ6pz9qiKFXhcnriJJSBQ5+Bz3oEg+6hVQ7OPmmTa0dVkKUPIgX9nHqHfstcwLnDfdXBj/zCl79U+iMpGtQBnA=="],
 

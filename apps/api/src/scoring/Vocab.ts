@@ -2,7 +2,7 @@ export type VocabScore = {
   score: number;
 };
 
-export const scoreRoleVocab = (transcript: string, targetVocab: Array<string>): number => {
+export const scoreRoleVocab = (transcript: string, targetVocab: ReadonlyArray<string>): number => {
   if (targetVocab.length === 0) {
     return 0;
   }

@@ -32,6 +32,23 @@ it("scores turn and emits ScoreUpdated", async () => {
         updated = input;
       }),
     updateTurnAudioKey: () => Effect.void,
+    getRoomTemplateId: () => Effect.succeed("template-1"),
+    getNextTurnIndex: () => Effect.succeed(0),
+    findScenarioTemplate: () =>
+      Effect.succeed({
+        templateId: "template-1",
+        topic: "travel",
+        level: "A2",
+        seedPrompt: "Hola",
+        turnPlan: [],
+        roleRubrics: [
+          {
+            roleId: "user",
+            targetVocab: ["adios"],
+            targetGrammar: []
+          }
+        ]
+      }),
     getTurnSubmission: () =>
       Effect.succeed({
         roomId: "r1",

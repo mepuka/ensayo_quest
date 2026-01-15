@@ -1,0 +1,91 @@
+import { describe, expect, it } from "bun:test";
+import { Effect, Layer, Stream, Chunk } from "effect";
+import * as Redacted from "effect/Redacted";
+import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
+import { Entry, makeEntryId } from "@effect/experimental/EventJournal";
+import { encodeRoomEventMsgPack, type RoomEvent } from "../../shared/src/RoomProtocol";
+import {
+  buildRoomStreamUrl,
+  decodeRoomEventEntry,
+  makeRoomIdentity,
+  roomEventStreamFromEntries
+} from "../eventlog/EventLogClient";
+
+const scoreEvent: RoomEvent = {
+  type: "ScoreUpdated",
+  turnId: "turn-1",
+  evaluation: {
+    turnId: "turn-1",
+    scores: {
+      fluency: 0.7,
+      vocab: 0.6,
+      naturalness: 0.8
+    },
+    overallScore: 0.7,
+    feedback: ["Good flow"],
+    nextPrompt: "Continue the conversation.",
+    modelVersion: "test-model",
+    confidence: 0.9
+  }
+};
+
+describe("buildRoomStreamUrl", () => {
+  it("builds a ws url from http", () => {
+    const url = buildRoomStreamUrl("http://localhost:8787/app", "room-1");
+    expect(url).toBe("ws://localhost:8787/api/rooms/room-1/stream");
+  });
+
+  it("builds a wss url from https", () => {
+    const url = buildRoomStreamUrl("https://example.com/app", "room-1");
+    expect(url).toBe("wss://example.com/api/rooms/room-1/stream");
+  });
+});
+
+describe("makeRoomIdentity", () => {
+  it("derives deterministic keys from roomId", async () => {
+    const program = Effect.gen(function* () {
+      const first = yield* makeRoomIdentity("room-1");
+      const second = yield* makeRoomIdentity("room-1");
+      return {
+        first: Redacted.value(first.privateKey),
+        second: Redacted.value(second.privateKey),
+        publicKey: first.publicKey
+      };
+    }).pipe(Effect.provide(Layer.mergeAll(EventLogEncryption.layerSubtle)));
+
+    const result = await Effect.runPromise(program);
+    expect(result.publicKey).toBe("room-1");
+    expect(Array.from(result.first)).toEqual(Array.from(result.second));
+  });
+});
+
+describe("decodeRoomEventEntry", () => {
+  it("decodes entry payloads to RoomEvent", () => {
+    const payload = encodeRoomEventMsgPack(scoreEvent);
+    const entry = new Entry({
+      id: makeEntryId(),
+      event: scoreEvent.type,
+      primaryKey: "room-1",
+      payload
+    });
+    const decoded = decodeRoomEventEntry(entry);
+
+    expect(decoded).toEqual(scoreEvent);
+  });
+});
+
+describe("roomEventStreamFromEntries", () => {
+  it("maps entry streams to RoomEvent streams", async () => {
+    const payload = encodeRoomEventMsgPack(scoreEvent);
+    const entry = new Entry({
+      id: makeEntryId(),
+      event: scoreEvent.type,
+      primaryKey: "room-1",
+      payload
+    });
+    const stream = roomEventStreamFromEntries(Stream.make(entry));
+    const result = await Effect.runPromise(Stream.runCollect(stream));
+
+    expect(Chunk.toReadonlyArray(result)).toEqual([scoreEvent]);
+  });
+});

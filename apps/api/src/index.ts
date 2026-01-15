@@ -22,23 +22,28 @@ const SubmitTurnResponse = Schema.Struct({
   status: Schema.String
 });
 
-const makeAppLayer = (env: CloudflareEnv) =>
-  Layer.mergeAll(
-    Layer.succeed(Env, env),
+class RequestReadError extends Schema.TaggedError<RequestReadError>()("RequestReadError", {
+  reason: Schema.String
+}) {}
+
+const makeAppLayer = (env: CloudflareEnv) => {
+  const envLayer = Layer.succeed(Env, env);
+  const baseLayer = Layer.mergeAll(
     DbLive,
     TurnQueueLive,
     RoomDoClientLive,
     RoomIdGeneratorLive,
     TurnstileLive,
-    ScoringConfigLive,
-    ScoringServiceLive.pipe(Layer.provide(ScoringConfigLive)),
     AudioBucketLive
-  );
+  ).pipe(Layer.provideMerge(envLayer));
+  const scoringLayer = ScoringServiceLive.pipe(Layer.provideMerge(ScoringConfigLive));
+  return Layer.mergeAll(baseLayer, scoringLayer);
+};
 
 const decodeBody = <A, I>(schema: Schema.Schema<A, I>, request: Request) =>
   Effect.tryPromise({
     try: () => request.text(),
-    catch: (cause) => new Error(String(cause))
+    catch: (cause) => new RequestReadError({ reason: String(cause) })
   }).pipe(
     Effect.flatMap((text) => Schema.decodeUnknown(Schema.parseJson(schema))(text))
   );
@@ -46,7 +51,7 @@ const decodeBody = <A, I>(schema: Schema.Schema<A, I>, request: Request) =>
 const decodeUnknownBody = (request: Request) =>
   Effect.tryPromise({
     try: () => request.text(),
-    catch: (cause) => new Error(String(cause))
+    catch: (cause) => new RequestReadError({ reason: String(cause) })
   }).pipe(Effect.flatMap((text) => Schema.decodeUnknown(Schema.parseJson())(text)));
 
 const jsonResponse = <A, I>(schema: Schema.Schema<A, I>, value: A, status = 200) =>
@@ -98,7 +103,10 @@ export default {
         segments[1] === "rooms" &&
         segments[3] === "turns"
       ) {
-        const roomId = segments[2];
+        const roomId = segments[2] ?? "";
+        if (!roomId) {
+          return new Response("Not Found", { status: 404 });
+        }
         const body = yield* decodeUnknownBody(request);
         const result = yield* handlers.submitTurn(roomId, body);
         return jsonResponse(SubmitTurnResponse, result, 202);
@@ -110,11 +118,14 @@ export default {
         segments[1] === "rooms" &&
         segments[3] === "stream"
       ) {
-        const roomId = segments[2];
+        const roomId = segments[2] ?? "";
+        if (!roomId) {
+          return new Response("Not Found", { status: 404 });
+        }
         const stub = getRoomStub(env, roomId);
         return yield* Effect.tryPromise({
           try: () => stub.fetch(request),
-          catch: (cause) => new Error(String(cause))
+          catch: (cause) => new RequestReadError({ reason: String(cause) })
         });
       }
       if (
@@ -124,15 +135,19 @@ export default {
         segments[1] === "turns" &&
         segments[3] === "audio"
       ) {
-        const turnId = segments[2];
+        const turnId = segments[2] ?? "";
+        if (!turnId) {
+          return new Response("Not Found", { status: 404 });
+        }
         const audio = yield* Effect.tryPromise({
           try: () => request.arrayBuffer(),
-          catch: (cause) => new Error(String(cause))
+          catch: (cause) => new RequestReadError({ reason: String(cause) })
         });
+        const contentType = request.headers.get("Content-Type") ?? undefined;
         const result = yield* handlers.uploadTurnAudio({
           turnId,
           audio,
-          contentType: request.headers.get("Content-Type") ?? undefined
+          ...(contentType ? { contentType } : {})
         });
         return jsonResponse(TurnAudioResponse, result, 201);
       }

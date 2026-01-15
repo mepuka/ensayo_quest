@@ -111,8 +111,6 @@ it("wraps queue binding for TurnQueue service", async () => {
     return yield* service.enqueueTurn({
       roomId: "r1",
       turnId: "t1",
-      overall: 0,
-      detailJson: "{}",
       status: "partial"
     });
   });

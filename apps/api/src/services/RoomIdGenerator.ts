@@ -1,4 +1,4 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 export interface RoomIdGeneratorService {
   generate: Effect.Effect<string, never, never>;
@@ -9,6 +9,6 @@ export class RoomIdGenerator extends Context.Tag("RoomIdGenerator")<
   RoomIdGeneratorService
 >() {}
 
-export const RoomIdGeneratorLive = RoomIdGenerator.of({
+export const RoomIdGeneratorLive = Layer.succeed(RoomIdGenerator, {
   generate: Effect.sync(() => crypto.randomUUID())
 });

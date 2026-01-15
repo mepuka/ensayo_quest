@@ -60,13 +60,13 @@ export class ScoringError extends Schema.TaggedError<ScoringError>()("ScoringErr
   reason: Schema.String
 }) {}
 
-export interface ScoringService {
+export interface ScoringServiceApi {
   evaluate: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
 }
 
 export class ScoringService extends Context.Tag("ScoringService")<
   ScoringService,
-  ScoringService
+  ScoringServiceApi
 >() {}
 
 const scoreOverall = (weights: ScoringWeights, scores: ScoringWeights): number =>

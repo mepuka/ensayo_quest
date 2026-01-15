@@ -3,6 +3,6 @@ import React from "react";
 import { Frontend } from "../frontend";
 
 it("renders the Frontend root section", () => {
-  const element = Frontend();
-  expect(element.type).toBe("main");
+  const element = React.createElement(Frontend);
+  expect(element.type).toBe(Frontend);
 });

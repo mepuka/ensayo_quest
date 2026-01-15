@@ -2,7 +2,7 @@ export type AudioStats = {
   totalMs: number;
   speechMs: number;
   silenceMs: number;
-  segments: Array<{ startMs: number; endMs: number }>;
+  segments: ReadonlyArray<{ startMs: number; endMs: number }>;
 };
 
 export const scoreFluency = (stats: AudioStats, _transcript: string): number => {
