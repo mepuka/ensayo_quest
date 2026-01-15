@@ -4,6 +4,7 @@ import { TurnSubmission } from "../TurnSubmission";
 import { ScenarioTemplate } from "../ScenarioTemplate";
 import { TurnPlan } from "../TurnPlan";
 import { RoleRubric } from "../RoleRubric";
+import { QueueJob } from "../QueueJob";
 
 it("validates TurnSubmission shape", () => {
   const input = {
@@ -49,4 +50,16 @@ it("validates TurnPlan and RoleRubric classes", () => {
   });
   expect(plan).toBeInstanceOf(TurnPlan);
   expect(rubric).toBeInstanceOf(RoleRubric);
+});
+
+it("validates turn scoring queue job payloads", () => {
+  const job = Schema.decodeUnknownSync(QueueJob)({
+    roomId: "r1",
+    turnId: "t1",
+    overall: 90,
+    detailJson: JSON.stringify({ subscores: { fluency: 80 } }),
+    status: "final"
+  });
+  expect(job).toBeInstanceOf(QueueJob);
+  expect(job.overall).toBe(90);
 });

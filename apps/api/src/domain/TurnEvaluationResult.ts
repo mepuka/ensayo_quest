@@ -6,3 +6,6 @@ export class TurnEvaluationResult extends Schema.Class<TurnEvaluationResult>("Tu
   roleId: Schema.String,
   isFinal: Schema.Boolean
 }) {}
+
+export const decodeTurnEvaluationResult = Schema.decodeUnknownSync(TurnEvaluationResult);
+export const encodeTurnEvaluationResult = Schema.encodeSync(TurnEvaluationResult);

@@ -16,3 +16,6 @@ export class TurnSubmission extends Schema.Class<TurnSubmission>("TurnSubmission
     )
   })
 }) {}
+
+export const decodeTurnSubmission = Schema.decodeUnknownSync(TurnSubmission);
+export const encodeTurnSubmission = Schema.encodeSync(TurnSubmission);

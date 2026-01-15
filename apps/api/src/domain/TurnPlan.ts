@@ -6,3 +6,6 @@ export class TurnPlan extends Schema.Class<TurnPlan>("TurnPlan")({
   promptType: Schema.Literal("user", "model"),
   objectiveIds: Schema.Array(Schema.String)
 }) {}
+
+export const decodeTurnPlan = Schema.decodeUnknownSync(TurnPlan);
+export const encodeTurnPlan = Schema.encodeSync(TurnPlan);

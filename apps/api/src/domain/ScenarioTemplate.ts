@@ -9,3 +9,6 @@ export class ScenarioTemplate extends Schema.Class<ScenarioTemplate>("ScenarioTe
   turnPlan: Schema.Array(TurnPlan),
   roleRubrics: Schema.Array(RoleRubric)
 }) {}
+
+export const decodeScenarioTemplate = Schema.decodeUnknownSync(ScenarioTemplate);
+export const encodeScenarioTemplate = Schema.encodeSync(ScenarioTemplate);

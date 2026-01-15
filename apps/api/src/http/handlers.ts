@@ -1,55 +1,62 @@
-import * as Either from "effect/Either";
+import { Effect } from "effect";
 import * as Schema from "effect/Schema";
-import { TurnSubmission } from "../domain/TurnSubmission";
+import { decodeTurnSubmission } from "../domain/TurnSubmission";
+import { Db } from "../services/Db";
+import { RoomIdGenerator } from "../services/RoomIdGenerator";
+import { TurnQueue } from "../services/TurnQueue";
+import { Turnstile } from "../security/Turnstile";
 
-export type TurnJob = { roomId: string; turnId: string };
+export class InvalidTurnSubmission extends Schema.TaggedError<InvalidTurnSubmission>()(
+  "InvalidTurnSubmission",
+  { reason: Schema.String }
+) {}
 
-export type SubmitTurnDeps = {
-  insertTurn: (submission: TurnSubmission) => Promise<void>;
-  enqueueTurn: (job: TurnJob) => Promise<void>;
-  verifyTurnstile?: (token: string) => Promise<boolean>;
-};
-
-export type CreateRoomDeps = {
-  createRoom: (roomId: string) => Promise<void>;
-  createRoomId?: () => string;
-};
+export class TurnstileFailed extends Schema.TaggedError<TurnstileFailed>()("TurnstileFailed", {
+  reason: Schema.String
+}) {}
 
 export const validateTurnSubmission = (input: unknown) =>
-  Either.try({
-    try: () => Schema.decodeUnknownSync(TurnSubmission)(input),
-    catch: (error) => error
+  Effect.try({
+    try: () => decodeTurnSubmission(input),
+    catch: (error) =>
+      new InvalidTurnSubmission({
+        reason: error instanceof Error ? error.message : "invalid_turn_submission"
+      })
   });
 
-export const createRoom = async (deps: CreateRoomDeps) => {
-  const createId = deps.createRoomId ?? (() => crypto.randomUUID());
-  const roomId = createId();
-  await deps.createRoom(roomId);
+export const createRoom = Effect.fn(function* () {
+  const db = yield* Db;
+  const generator = yield* RoomIdGenerator;
+  const roomId = yield* generator.generate;
+  yield* db.createRoom(roomId);
   return { roomId };
-};
+});
 
-export const submitTurn = async (
-  deps: SubmitTurnDeps,
+export const submitTurn = Effect.fn(function* (
   input: unknown,
   options?: { turnstileToken?: string }
-) => {
-  const parsed = validateTurnSubmission(input);
-  if (parsed._tag === "Left") {
-    return parsed;
-  }
-  if (deps.verifyTurnstile && options?.turnstileToken) {
-    const ok = await deps.verifyTurnstile(options.turnstileToken);
+) {
+  const db = yield* Db;
+  const queue = yield* TurnQueue;
+  const turnstile = yield* Turnstile;
+  const submission = yield* validateTurnSubmission(input);
+  if (options?.turnstileToken) {
+    const ok = yield* turnstile.verifyToken(options.turnstileToken);
     if (!ok) {
-      return Either.left(new Error("turnstile_failed"));
+      return yield* new TurnstileFailed({ reason: "turnstile_failed" });
     }
   }
-  await deps.insertTurn(parsed.right);
-  await deps.enqueueTurn({ roomId: parsed.right.roomId, turnId: parsed.right.turnId });
-  return Either.right({ turnId: parsed.right.turnId, status: "processing" as const });
-};
+  yield* db.insertTurn(submission);
+  yield* queue.enqueueTurn({
+    roomId: submission.roomId,
+    turnId: submission.turnId,
+    overall: 0,
+    detailJson: "{}",
+    status: "partial"
+  });
+  return { turnId: submission.turnId, status: "processing" as const };
+});
 
-export const streamRoom = async () => {
-  return { status: "streaming" as const };
-};
+export const streamRoom = Effect.succeed({ status: "streaming" as const });
 
 export const handlers = { validateTurnSubmission, createRoom, submitTurn, streamRoom };
