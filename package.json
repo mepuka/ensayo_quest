@@ -1,0 +1,28 @@
+{
+  "name": "ensayo_quest",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "prepare": "effect-language-service patch",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260115.0",
+    "@effect/language-service": "^0.65.0",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.8",
+    "@types/react-dom": "^19.2.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@effect/ai": "^0.33.2",
+    "@effect/ai-anthropic": "^0.23.0",
+    "@effect/ai-google": "^0.12.1",
+    "effect": "^3.19.14",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  }
+}

@@ -1,0 +1,23 @@
+name = "ensayo-quest-api"
+main = "src/index.ts"
+compatibility_date = "2026-01-15"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ensayo_quest"
+
+[[r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "ensayo-audio"
+
+[[vectorize]]
+binding = "SPANISH_VECTORS"
+index_name = "ensayo-spanish"
+
+[[queues.producers]]
+binding = "TURN_QUEUE"
+queue = "turn-scoring"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDurableObject"
