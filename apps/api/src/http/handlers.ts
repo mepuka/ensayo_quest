@@ -5,6 +5,8 @@ import { Db } from "../services/Db";
 import { RoomIdGenerator } from "../services/RoomIdGenerator";
 import { TurnQueue } from "../services/TurnQueue";
 import { Turnstile } from "../security/Turnstile";
+import { RoomDoClient } from "../services/RoomDoClient";
+import { TurnAccepted } from "../domain/RoomProtocol";
 
 export class InvalidTurnSubmission extends Schema.TaggedError<InvalidTurnSubmission>()(
   "InvalidTurnSubmission",
@@ -39,6 +41,7 @@ export const submitTurn = Effect.fn(function* (
   const db = yield* Db;
   const queue = yield* TurnQueue;
   const turnstile = yield* Turnstile;
+  const roomDo = yield* RoomDoClient;
   const submission = yield* validateTurnSubmission(input);
   if (options?.turnstileToken) {
     const ok = yield* turnstile.verifyToken(options.turnstileToken);
@@ -54,6 +57,10 @@ export const submitTurn = Effect.fn(function* (
     detailJson: "{}",
     status: "partial"
   });
+  yield* roomDo.emitRoomEvent(
+    submission.roomId,
+    new TurnAccepted({ type: "TurnAccepted", turnId: submission.turnId })
+  );
   return { turnId: submission.turnId, status: "processing" as const };
 });
 

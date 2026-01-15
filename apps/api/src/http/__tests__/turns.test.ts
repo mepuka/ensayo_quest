@@ -6,6 +6,7 @@ import { RoomIdGenerator } from "../../services/RoomIdGenerator";
 import { TurnQueue } from "../../services/TurnQueue";
 import type { TurnJob } from "../../services/TurnQueue";
 import { Turnstile } from "../../security/Turnstile";
+import { RoomDoClient } from "../../services/RoomDoClient";
 
 it("rejects invalid TurnSubmission", () => {
   const result = Effect.runSync(Effect.either(validateTurnSubmission({})));
@@ -39,6 +40,7 @@ it("createRoom creates a room id", async () => {
 it("submitTurn enqueues a job for valid input", async () => {
   let enqueued: Array<TurnJob> = [];
   let inserted: Array<string> = [];
+  let emitted: Array<string> = [];
   const input = {
     roomId: "r",
     turnId: "t",
@@ -64,6 +66,12 @@ it("submitTurn enqueues a job for valid input", async () => {
             enqueued.push(job);
           })
       }),
+      Effect.provideService(RoomDoClient, {
+        emitRoomEvent: (_roomId, event) =>
+          Effect.sync(() => {
+            emitted.push(event.type);
+          })
+      }),
       Effect.provideService(Turnstile, {
         verifyToken: () => Effect.succeed(true)
       })
@@ -81,11 +89,13 @@ it("submitTurn enqueues a job for valid input", async () => {
       status: "partial"
     }
   ]);
+  expect(emitted).toEqual(["TurnAccepted"]);
 });
 
 it("submitTurn rejects when Turnstile check fails", async () => {
   let enqueued: Array<TurnJob> = [];
   let inserted: Array<string> = [];
+  let emitted: Array<string> = [];
   const input = {
     roomId: "r",
     turnId: "t",
@@ -112,6 +122,12 @@ it("submitTurn rejects when Turnstile check fails", async () => {
               enqueued.push(job);
             })
         }),
+        Effect.provideService(RoomDoClient, {
+          emitRoomEvent: (_roomId, event) =>
+            Effect.sync(() => {
+              emitted.push(event.type);
+            })
+        }),
         Effect.provideService(Turnstile, {
           verifyToken: () => Effect.succeed(false)
         })
@@ -121,4 +137,5 @@ it("submitTurn rejects when Turnstile check fails", async () => {
   expect(result._tag).toBe("Left");
   expect(inserted).toEqual([]);
   expect(enqueued).toEqual([]);
+  expect(emitted).toEqual([]);
 });

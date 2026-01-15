@@ -1,19 +1,43 @@
-export type ScoreUpdateStatus = "partial" | "final";
+import type { SqlStorage } from "@cloudflare/workers-types";
+import { EventLogDurableObject } from "@effect/experimental/EventLogServer/Cloudflare";
+import type { CloudflareEnv } from "../services/Env";
+import { makeDoSqliteEventLogRuntimeLayer, makeDoSqliteEventLogStorageLayer } from "./EventLogStorage";
+import { decodeRoomEventEnvelopeMsgPack } from "../domain/RoomProtocol";
+import { appendRoomEventWithState } from "./RoomEventAppender";
+import * as ManagedRuntime from "effect/ManagedRuntime";
+import * as Layer from "effect/Layer";
 
-export class RoomDurableObject {
-  static buildScoreUpdated(input: { turnId: string; status: ScoreUpdateStatus }) {
-    return {
-      event: "ScoreUpdated",
-      turnId: input.turnId,
-      status: input.status
-    };
+export class RoomDurableObject extends EventLogDurableObject {
+  private readonly roomRuntime: ManagedRuntime.ManagedRuntime<any, never>;
+
+  constructor(state: DurableObjectState, env: CloudflareEnv) {
+    const storage = (state.storage as DurableObjectStorage & { sql: SqlStorage }).sql;
+    super({
+      ctx: state,
+      env,
+      storageLayer: makeDoSqliteEventLogStorageLayer(storage).pipe(Layer.orDie)
+    });
+    this.roomRuntime = ManagedRuntime.make(
+      makeDoSqliteEventLogRuntimeLayer(storage).pipe(Layer.orDie)
+    );
   }
 
-  static buildNpcPromptUpdated(input: { turnId: string; prompt: string }) {
-    return {
-      event: "NpcPromptUpdated",
-      turnId: input.turnId,
-      prompt: input.prompt
-    };
+  override async fetch(request?: Request): Promise<Response> {
+    if (!request || request.headers.get("Upgrade") === "websocket") {
+      return super.fetch();
+    }
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+    const body = new Uint8Array(await request.arrayBuffer());
+    const envelope = decodeRoomEventEnvelopeMsgPack(body);
+    await this.roomRuntime.runPromise(
+      appendRoomEventWithState(
+        envelope.roomId,
+        envelope.event,
+        envelope.stateJson
+      )
+    );
+    return new Response(null, { status: 204 });
   }
 }
