@@ -56,10 +56,8 @@ it("validates turn scoring queue job payloads", () => {
   const job = Schema.decodeUnknownSync(QueueJob)({
     roomId: "r1",
     turnId: "t1",
-    overall: 90,
-    detailJson: JSON.stringify({ subscores: { fluency: 80 } }),
     status: "final"
   });
   expect(job).toBeInstanceOf(QueueJob);
-  expect(job.overall).toBe(90);
+  expect(job.status).toBe("final");
 });

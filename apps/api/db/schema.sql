@@ -15,8 +15,12 @@ CREATE TABLE IF NOT EXISTS rooms (
 CREATE TABLE IF NOT EXISTS turns (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  turn_index INTEGER NOT NULL,
   speaker_user_id TEXT NOT NULL,
   transcript TEXT NOT NULL,
+  audio_stats_json TEXT NOT NULL,
+  audio_key TEXT,
   status TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (room_id) REFERENCES rooms(id)

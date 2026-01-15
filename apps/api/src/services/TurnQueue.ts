@@ -9,8 +9,6 @@ export class QueueError extends Schema.TaggedError<QueueError>()("QueueError", {
 export type TurnJob = {
   roomId: string;
   turnId: string;
-  overall: number;
-  detailJson: string;
   status: "partial" | "final";
 };
 

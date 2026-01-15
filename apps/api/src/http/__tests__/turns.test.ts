@@ -31,6 +31,7 @@ it("createRoom creates a room id", async () => {
     )
   );
   expect(result.roomId).toBe("room-1");
+  expect(result.seedPrompt).toBe("Hola");
   if (createdId.length === 0) {
     throw new Error("room id was not created");
   }
@@ -58,6 +59,25 @@ it("submitTurn enqueues a job for valid input", async () => {
           Effect.sync(() => {
             inserted.push(submission.turnId);
           }),
+        getTurnSubmission: () =>
+          Effect.succeed({
+            roomId: "r",
+            turnId: "t",
+            templateId: "tmp",
+            turnIndex: 0,
+            speakerUserId: "u",
+            transcript: "hola",
+            audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] }
+          }),
+        getScenarioTemplate: () =>
+          Effect.succeed({
+            templateId: "tmp",
+            topic: "travel",
+            level: "A1",
+            turnPlan: [],
+            roleRubrics: []
+          }),
+        updateTurnAudioKey: () => Effect.void,
         updateTurnScore: () => Effect.void
       }),
       Effect.provideService(TurnQueue, {
@@ -84,8 +104,6 @@ it("submitTurn enqueues a job for valid input", async () => {
     {
       roomId: "r",
       turnId: "t",
-      overall: 0,
-      detailJson: "{}",
       status: "partial"
     }
   ]);
@@ -114,6 +132,25 @@ it("submitTurn rejects when Turnstile check fails", async () => {
             Effect.sync(() => {
               inserted.push(submission.turnId);
             }),
+          getTurnSubmission: () =>
+            Effect.succeed({
+              roomId: "r",
+              turnId: "t",
+              templateId: "tmp",
+              turnIndex: 0,
+              speakerUserId: "u",
+              transcript: "hola",
+              audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] }
+            }),
+          getScenarioTemplate: () =>
+            Effect.succeed({
+              templateId: "tmp",
+              topic: "travel",
+              level: "A1",
+              turnPlan: [],
+              roleRubrics: []
+            }),
+          updateTurnAudioKey: () => Effect.void,
           updateTurnScore: () => Effect.void
         }),
         Effect.provideService(TurnQueue, {

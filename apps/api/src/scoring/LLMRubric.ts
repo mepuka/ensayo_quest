@@ -19,9 +19,7 @@ export const RubricOutput = Schema.Struct({
 export type RubricOutput = Schema.Schema.Type<typeof RubricOutput>;
 
 export const parseRubricOutput = (input: string) =>
-  Either.flatMap(Either.try(() => JSON.parse(input)), (json) =>
-    Either.try({
-      try: () => Schema.decodeUnknownSync(RubricOutput)(json),
-      catch: (error) => error
-    })
-  );
+  Either.try({
+    try: () => Schema.decodeUnknownSync(Schema.parseJson(RubricOutput))(input),
+    catch: (error) => error
+  });

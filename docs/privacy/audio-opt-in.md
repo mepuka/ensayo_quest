@@ -12,7 +12,8 @@ Audio upload is optional. By default, the client submits transcripts and timing 
 
 ## Retention (MVP)
 - Audio is stored only when opt-in is enabled.
-- Retention duration is not yet finalized and will be defined before production use.
+- Audio retention is 30 days, aligned with transcript retention.
+- R2 lifecycle rules should delete audio objects after 30 days.
 
 ## User Controls
 - Opt-in is a per-user setting.

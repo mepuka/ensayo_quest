@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "prepare": "effect-language-service patch",
+    "test": "bun test apps",
     "typecheck": "bunx tsc --noEmit"
   },
   "devDependencies": {

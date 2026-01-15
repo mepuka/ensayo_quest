@@ -42,6 +42,8 @@ it("writes room and turn records via D1 binding", async () => {
   expect(calls[0]?.params[0]).toBe("room-1");
   expect(calls[1]?.sql).toBe(queries.insertTurn);
   expect(calls[1]?.params[0]).toBe("turn-1");
+  expect(calls[1]?.params[2]).toBe("tmp");
+  expect(calls[1]?.params[3]).toBe(0);
 });
 
 it("writes turn score updates via D1 binding", async () => {
