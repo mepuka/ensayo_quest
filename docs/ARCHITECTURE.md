@@ -43,25 +43,34 @@ Web Client (Browser)
 │                                                                             │
 │  ON TurnAccepted EVENT:                                                     │
 │    1. Persist event to EventLog (atomic)                                    │
-│    2. Enqueue to TURN_QUEUE (fire-and-forget)                               │
-│    3. Emit AdvanceStep immediately (does NOT wait for scoring)              │
-│    4. Broadcast state update to clients                                     │
+│    2. Emit AdvanceStep immediately (does NOT wait for audio or scoring)     │
+│    3. Broadcast state update to clients                                     │
+│    NOTE: Queue enqueue moved to AudioUploaded (see below)                   │
+│                                                                             │
+│  ON AudioUploaded EVENT:                                                    │
+│    1. Persist event to EventLog (atomic)                                    │
+│    2. Enqueue to TURN_QUEUE (fire-and-forget, gates scoring on audio)       │
+│    3. Broadcast state update to clients                                     │
 └─────────────────────────────────────────────────────────────────────────────┘
                                │
                                │ Cloudflare Queue (async, decoupled)
+                               │ Triggered by AudioUploaded, NOT TurnAccepted
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ Queue Consumer (Cloudflare Worker - separate from DO)                       │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │ TurnScoringConsumer                                                   │  │
 │  │   - Receives {roomId, turnId} from TURN_QUEUE                         │  │
+│  │   - Verifies AudioUploaded event exists (defense in depth)            │  │
+│  │   - Fetches audio from R2 (guaranteed to exist after AudioUploaded)   │  │
 │  │   - Builds ScoringContext from EventLog (last 15 turns)               │  │
 │  │   - Runs scoring pipeline (fluency, vocab, grammar, LLM review)       │  │
+│  │   - Runs Gemini audio analysis (pronunciation, fluency assessment)    │  │
 │  │   - Emits Score* events back to EventLog via DO POST                  │  │
 │  │   - Idempotent via processed_queue_messages table                     │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
-│  SCORING DOES NOT BLOCK TURN FLOW - it runs asynchronously after turn      │
+│  SCORING DOES NOT BLOCK TURN FLOW - it runs asynchronously after audio     │
 │  State advances immediately; scores appear later via event stream          │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -94,6 +103,7 @@ These are **non-negotiable** architectural rules. Any code change that violates 
 | 6   | **DO alarms are guarded by idempotency**    | Check guard store before GenerateNpcTurn                     |
 | 7   | **WebSocket handlers validate session**     | Every message must have valid sessionId                      |
 | 8   | **Participant membership tracked in state** | RoomParticipants with expected + active participants         |
+| 9   | **Scoring enqueue gated on AudioUploaded**  | Queue consumer needs audio from R2; prevents race condition  |
 
 ---
 
@@ -197,9 +207,20 @@ yield* persistRoomState({ ... }); // RACE CONDITION
 
 - **Entry**: Turn accepted (TurnAccepted event emitted)
 - **Duration**: Milliseconds (only as long as AdvanceStep takes to process)
-- **Exit**: AdvanceStep fires immediately, NOT gated by scoring
-- **Scoring**: Runs asynchronously in Queue Consumer; Score* events arrive later
-- **Client UX**: Client sees turn accepted immediately; scores stream in progressively
+- **Exit**: AdvanceStep fires immediately, NOT gated by audio upload or scoring
+- **Audio Upload**: Client uploads audio separately; AudioUploaded event triggers scoring enqueue
+- **Scoring**: Runs asynchronously in Queue Consumer after AudioUploaded; Score* events arrive later
+- **Client UX**: Client sees turn accepted immediately; uploads audio; scores stream in progressively
+
+**Audio Upload Flow** (runs parallel to turn progression):
+
+```text
+TurnAccepted → AdvanceStep → (room continues)
+     │
+     └─── Client uploads audio ─┬─► AudioUploaded event
+                                └─► Enqueue to TURN_QUEUE
+                                └─► TurnScoringConsumer processes
+```
 
 ---
 
@@ -227,3 +248,4 @@ See `docs/plans/2026-01-16-multiplayer-architecture-design.md` for full remediat
 | 2026-01-16 | Added validated issues          | Deep dive investigation                    |
 | 2026-01-16 | Clarified scoring runtime       | Scoring in Queue Consumer, not DO          |
 | 2026-01-16 | Clarified Processing state      | Transient state, does not wait for scoring |
+| 2026-01-16 | Moved scoring enqueue to AudioUploaded | Fixes race condition; audio must exist before scoring |

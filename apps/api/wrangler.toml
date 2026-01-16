@@ -5,6 +5,7 @@ compatibility_date = "2026-01-15"
 [[d1_databases]]
 binding = "DB"
 database_name = "ensayo_quest"
+migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "AUDIO_BUCKET"
@@ -36,3 +37,81 @@ class_name = "RoomDurableObject"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RoomDurableObject"]
+
+# ─────────────────────────────────────────────────────────────────
+# Environment: Staging
+# ─────────────────────────────────────────────────────────────────
+[env.staging]
+name = "ensayo-quest-api-staging"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "ensayo_quest_staging"
+database_id = "ca6ff8af-7309-40b5-bfa5-50414053bce4"
+migrations_dir = "migrations"
+
+[[env.staging.r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "ensayo-audio-staging"
+
+[[env.staging.vectorize]]
+binding = "SPANISH_VECTORS"
+index_name = "ensayo-spanish-staging"
+
+[[env.staging.queues.producers]]
+binding = "TURN_QUEUE"
+queue = "turn-scoring-staging"
+
+[[env.staging.queues.producers]]
+binding = "TURN_SCORING_DLQ"
+queue = "turn-scoring-dlq-staging"
+
+[[env.staging.queues.consumers]]
+queue = "turn-scoring-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "turn-scoring-dlq-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDurableObject"
+
+# ─────────────────────────────────────────────────────────────────
+# Environment: Production
+# ─────────────────────────────────────────────────────────────────
+[env.production]
+name = "ensayo-quest-api"
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "ensayo_quest"
+database_id = "ab893994-0895-4553-8b2c-88132784932f"
+migrations_dir = "migrations"
+
+[[env.production.r2_buckets]]
+binding = "AUDIO_BUCKET"
+bucket_name = "ensayo-audio"
+
+[[env.production.vectorize]]
+binding = "SPANISH_VECTORS"
+index_name = "ensayo-spanish"
+
+[[env.production.queues.producers]]
+binding = "TURN_QUEUE"
+queue = "turn-scoring"
+
+[[env.production.queues.producers]]
+binding = "TURN_SCORING_DLQ"
+queue = "turn-scoring-dlq"
+
+[[env.production.queues.consumers]]
+queue = "turn-scoring"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "turn-scoring-dlq"
+
+[[env.production.durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDurableObject"

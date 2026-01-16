@@ -1,0 +1,196 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Lint, typecheck, and test
+  # ─────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Run tests
+        run: bun test
+
+  # ─────────────────────────────────────────────────────────────────
+  # Build frontend (validates build works)
+  # ─────────────────────────────────────────────────────────────────
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build frontend
+        run: bun build apps/web/index.html --outdir apps/web/dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────
+  # Deploy Pages preview (PR only)
+  # ─────────────────────────────────────────────────────────────────
+  deploy-preview:
+    name: Deploy Preview
+    needs: [test, build-web]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - name: Install wrangler
+        run: bun add -g wrangler
+
+      - name: Deploy to Pages (preview)
+        id: deploy
+        run: |
+          DEPLOY_OUTPUT=$(wrangler pages deploy apps/web/dist \
+            --project-name=ensayo-quest-web \
+            --branch=${{ github.head_ref }} \
+            --commit-hash=${{ github.sha }})
+          PREVIEW_URL=$(echo "$DEPLOY_OUTPUT" | grep -oP 'https://[^\s]+\.pages\.dev')
+          echo "preview_url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `🚀 Preview deployed: ${{ steps.deploy.outputs.preview_url }}`
+            })
+
+  # ─────────────────────────────────────────────────────────────────
+  # Deploy to staging (main branch)
+  # ─────────────────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy Staging
+    needs: [test, build-web]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - name: Install wrangler
+        run: bun add -g wrangler
+
+      # D1 migrations (staging)
+      - name: Run D1 migrations (staging)
+        run: |
+          wrangler d1 migrations apply ensayo_quest --env staging --remote
+        working-directory: apps/api
+
+      # Deploy Workers (staging)
+      - name: Deploy Workers (staging)
+        run: wrangler deploy --env staging
+        working-directory: apps/api
+
+      # Deploy Pages (staging/production URL)
+      - name: Deploy Pages (staging)
+        run: |
+          wrangler pages deploy apps/web/dist \
+            --project-name=ensayo-quest-web \
+            --branch=main
+
+  # ─────────────────────────────────────────────────────────────────
+  # Deploy to production (release tags)
+  # ─────────────────────────────────────────────────────────────────
+  deploy-production:
+    name: Deploy Production
+    needs: [test, build-web]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+      - name: Install wrangler
+        run: bun add -g wrangler
+
+      # D1 migrations (production)
+      - name: Run D1 migrations (production)
+        run: |
+          wrangler d1 migrations apply ensayo_quest --env production --remote
+        working-directory: apps/api
+
+      # Deploy Workers (production)
+      - name: Deploy Workers (production)
+        run: wrangler deploy --env production
+        working-directory: apps/api
+
+      # Deploy Pages (production)
+      - name: Deploy Pages (production)
+        run: |
+          wrangler pages deploy apps/web/dist \
+            --project-name=ensayo-quest-web \
+            --branch=production \
+            --commit-hash=${{ github.sha }}
