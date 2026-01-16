@@ -8,6 +8,32 @@ alwaysApply: true
 
 This is an Effect-based TypeScript project using Bun as the runtime.
 
+## Architecture Reference (REQUIRED)
+
+**Before implementing ANY code changes, you MUST:**
+
+1. Read `docs/ARCHITECTURE.md` to understand the system invariants
+2. Verify your implementation aligns with the architectural diagram
+3. If your changes would conflict with the architecture, STOP and surface the conflict
+
+**If you find conflicts or ambiguities in the architecture:**
+
+- Do NOT proceed with code changes
+- Explicitly surface the conflict to the user
+- Propose architectural changes if needed
+- Wait for approval before implementation
+- If approved, update `docs/ARCHITECTURE.md` FIRST, then implement
+
+**Key invariants (see `docs/ARCHITECTURE.md` for full list):**
+
+- EventLog is the single source of truth (events derive state)
+- All commands require requestId for idempotency
+- State persisted atomically with events via `journal.write().effect()`
+- Scoring is fire-and-forget via `ctx.fork()` (Pattern A)
+- AdvanceStep queued AFTER scoring completes (not immediately)
+- DO alarms guarded by idempotency table
+- WebSocket handlers validate session before processing
+
 ## Effect
 
 This project uses Effect for functional programming patterns. Use the `effect-solutions` CLI for documentation:
