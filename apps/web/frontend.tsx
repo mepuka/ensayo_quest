@@ -309,7 +309,10 @@ export const Frontend = () => {
   );
 };
 
-const rootElement = document.getElementById("root");
-if (rootElement) {
-  createRoot(rootElement).render(<Frontend />);
+// Only render in browser environment (not during test imports)
+if (typeof document !== "undefined") {
+  const rootElement = document.getElementById("root");
+  if (rootElement) {
+    createRoot(rootElement).render(<Frontend />);
+  }
 }
