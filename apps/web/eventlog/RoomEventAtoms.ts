@@ -3,7 +3,14 @@ import { Effect, Stream } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type { RoomEvent } from "../../shared/src/RoomProtocol";
-import { getRoomStreamUrl, makeRoomEventStream } from "./EventLogClient";
+import {
+  getRoomStreamUrl,
+  makeRoomEventStream,
+  makeRoomEventStreamWithStatus,
+  initialConnectionState,
+  type ConnectionState,
+  type ConnectionStatus
+} from "./EventLogClient";
 import {
   initialRoomState,
   reduceRoomEvent,
@@ -11,6 +18,10 @@ import {
   type RoomState,
   type ScorePanelState
 } from "./RoomEventReducer";
+
+// Re-export connection types for convenience
+export type { ConnectionState, ConnectionStatus } from "./EventLogClient";
+export { initialConnectionState } from "./EventLogClient";
 
 // =============================================================================
 // Room ID Atom
@@ -83,6 +94,60 @@ export const roomStateAtom = Atom.make((get) => {
  */
 const makeRoomStateStream = (roomId: string) =>
   roomStateStreamFromEvents(roomEventStreamForId(roomId), initialRoomState);
+
+// =============================================================================
+// Connection Status Atom
+// =============================================================================
+
+/**
+ * Connection status atom.
+ *
+ * Tracks WebSocket connection lifecycle:
+ * - connecting: Initial connection attempt
+ * - connected: WebSocket is open and syncing events
+ * - reconnecting: Connection lost, EventLogRemote is retrying
+ * - disconnected: Connection failed
+ *
+ * EventLogRemote handles reconnection internally with exponential backoff
+ * (100ms to 5s max). This atom surfaces that status to the UI.
+ */
+export const connectionStatusAtom = Atom.make((get) => {
+  const roomId = get(roomIdAtom);
+  if (Option.isNone(roomId) || roomId.value.trim() === "") {
+    return Stream.make(initialConnectionState);
+  }
+
+  // Use the stream with status tracking
+  return Stream.unwrapScoped(
+    Effect.map(
+      makeRoomEventStreamWithStatus({
+        roomId: roomId.value,
+        url: getRoomStreamUrl(roomId.value)
+      }),
+      ({ connectionStatus }) => connectionStatus
+    )
+  );
+});
+
+/**
+ * Simple connection status string atom for easy UI binding.
+ */
+export const connectionStatusSimpleAtom = Atom.make((get) => {
+  const roomId = get(roomIdAtom);
+  if (Option.isNone(roomId) || roomId.value.trim() === "") {
+    return Stream.succeed<ConnectionStatus>("disconnected");
+  }
+
+  return Stream.unwrapScoped(
+    Effect.map(
+      makeRoomEventStreamWithStatus({
+        roomId: roomId.value,
+        url: getRoomStreamUrl(roomId.value)
+      }),
+      ({ connectionStatus }) => Stream.map(connectionStatus, (state) => state.status)
+    )
+  );
+});
 
 // =============================================================================
 // Legacy Compatibility
