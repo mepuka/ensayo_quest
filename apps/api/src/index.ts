@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import type { MessageBatch, ExecutionContext } from "@cloudflare/workers-types";
 import { encodeJson } from "./http/codec";
 import { handlers } from "./http/handlers";
-import { CreateRoomRequest, CreateRoomResponse, TurnAudioResponse } from "./domain/HttpProtocol";
+import { CreateRoomRequest, CreateRoomResponse, SubmitTurnResponse, TurnAudioResponse } from "./domain/HttpProtocol";
 import type { CloudflareEnv } from "./services/Env";
 import { Env } from "./services/Env";
 import { DbLive } from "./services/Db";
@@ -19,12 +19,6 @@ import { Db } from "./services/Db";
 import { RoomDurableObject } from "./durable-objects/RoomDurableObject";
 import { toHttpErrorResponse } from "./http/errorResponse";
 import { routes, matchRoute } from "./http/routes";
-
-// Response schemas
-const SubmitTurnResponse = Schema.Struct({
-  turnId: Schema.String,
-  status: Schema.String
-});
 
 class RequestReadError extends Schema.TaggedError<RequestReadError>()("RequestReadError", {
   reason: Schema.String
@@ -126,6 +120,25 @@ const getRoomStub = (env: CloudflareEnv, roomId: string) => {
 // Exports
 // ============================================================================
 export { RoomDurableObject };
+
+// ============================================================================
+// Queue Retry Backoff
+// ============================================================================
+
+/**
+ * Calculate exponential backoff delay for queue retries.
+ * Base: 30 seconds, multiplier: 3x per attempt
+ * Max: 12 hours (43200 seconds)
+ *
+ * Attempts: 1 → 30s, 2 → 90s, 3 → 270s, 4 → 810s, 5+ → capped at 12h
+ */
+const calculateRetryDelay = (attempts: number): number => {
+  const baseDelay = 30;
+  const multiplier = 3;
+  const maxDelay = 43200; // 12 hours
+  const delay = baseDelay * Math.pow(multiplier, Math.max(0, attempts - 1));
+  return Math.min(delay, maxDelay);
+};
 
 export default {
   async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
@@ -241,11 +254,14 @@ export default {
           );
           message.ack();
         })().pipe(
-          // Retryable errors: retry the message
+          // Retryable errors: retry with exponential backoff
           Effect.catchTag("TurnScoringRetryableError", (err) =>
             Effect.sync(() => {
-              console.error(`Retryable error for message ${message.id}: ${err.reason}`);
-              message.retry();
+              const delay = calculateRetryDelay(message.attempts);
+              console.error(
+                `Retryable error for message ${message.id} (attempt ${message.attempts}, retry in ${delay}s): ${err.reason}`
+              );
+              message.retry({ delaySeconds: delay });
             })
           ),
           // Non-retryable errors: ack to prevent retry (let DLQ handle via max_retries)

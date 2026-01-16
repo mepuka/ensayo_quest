@@ -206,6 +206,14 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
 // RoomDurableObject
 // =============================================================================
 
+/**
+ * RoomDurableObject extends EventLogDurableObject which provides:
+ * - Hibernatable WebSocket support (setHibernatableWebSocketEventTimeout)
+ * - WebSocket lifecycle handlers (webSocketMessage, webSocketClose, webSocketError)
+ * - EventLog protocol handling via acceptWebSocket()
+ *
+ * The DO hibernates between WebSocket messages to minimize duration billing.
+ */
 export class RoomDurableObject extends EventLogDurableObject {
   private readonly roomRuntime: ManagedRuntime.ManagedRuntime<RoomRuntimeContext, never>;
   private readonly roomId: string;

@@ -12,6 +12,11 @@ export class CreateRoomResponse extends Schema.Class<CreateRoomResponse>("Create
   seedPrompt: Schema.String
 }) {}
 
+export class SubmitTurnResponse extends Schema.Class<SubmitTurnResponse>("SubmitTurnResponse")({
+  turnId: Schema.String,
+  status: Schema.String
+}) {}
+
 export class TurnAudioResponse extends Schema.Class<TurnAudioResponse>("TurnAudioResponse")({
   audioKey: Schema.String
 }) {}
@@ -43,6 +48,8 @@ export const decodeCreateRoomRequest = Schema.decodeUnknownSync(CreateRoomReques
 export const encodeCreateRoomRequest = Schema.encodeSync(CreateRoomRequest);
 export const decodeCreateRoomResponse = Schema.decodeUnknownSync(CreateRoomResponse);
 export const encodeCreateRoomResponse = Schema.encodeSync(CreateRoomResponse);
+export const decodeSubmitTurnResponse = Schema.decodeUnknownSync(SubmitTurnResponse);
+export const encodeSubmitTurnResponse = Schema.encodeSync(SubmitTurnResponse);
 export const decodeTurnAudioResponse = Schema.decodeUnknownSync(TurnAudioResponse);
 export const encodeTurnAudioResponse = Schema.encodeSync(TurnAudioResponse);
 export const decodeHttpErrorResponse = Schema.decodeUnknownSync(HttpErrorResponse);

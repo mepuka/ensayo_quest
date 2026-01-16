@@ -2,8 +2,26 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { useAtomSet, useAtomValue, Result } from "@effect-atom/atom-react";
 import { Effect, Fiber } from "effect";
+import * as Schema from "effect/Schema";
 import type { RuntimeFiber } from "effect/Fiber";
 import * as Option from "effect/Option";
+
+// =============================================================================
+// API Response Schemas (runtime validation)
+// =============================================================================
+
+const CreateRoomResponse = Schema.Struct({
+  roomId: Schema.String,
+  wsUrl: Schema.optional(Schema.String), // May be present but not used
+  seedPrompt: Schema.String
+});
+const decodeCreateRoomResponse = Schema.decodeUnknownSync(CreateRoomResponse);
+
+const SubmitTurnResponse = Schema.Struct({
+  turnId: Schema.String,
+  status: Schema.String
+});
+const decodeSubmitTurnResponse = Schema.decodeUnknownSync(SubmitTurnResponse);
 import { ScorePanel } from "./components/ScorePanel";
 import { roomIdAtom, scorePanelAtom } from "./eventlog/RoomEventAtoms";
 import { initialScorePanelState } from "./eventlog/RoomEventReducer";
@@ -85,10 +103,8 @@ export const Frontend = () => {
         setRoomError(errorText || "create_room_failed");
         return;
       }
-      const data = (await response.json()) as {
-        roomId: string;
-        seedPrompt: string;
-      };
+      const json = await response.json();
+      const data = decodeCreateRoomResponse(json);
       updateRoomIdParam(data.roomId);
       setSeedPrompt(data.seedPrompt);
       setRoomStatus("ready");
@@ -170,7 +186,8 @@ export const Frontend = () => {
         setSubmitError(errorText || "submit_turn_failed");
         return;
       }
-      const data = (await response.json()) as { turnId: string };
+      const json = await response.json();
+      const data = decodeSubmitTurnResponse(json);
       setSubmitStatus("submitted");
       void runUploadAudio(data.turnId);
     } catch (error) {
