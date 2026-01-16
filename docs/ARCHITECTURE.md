@@ -22,103 +22,61 @@
 
 ## System Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      MULTIPLAYER ROOM ARCHITECTURE                           │
+│                         MULTIPLAYER ROOM (CORE FLOW)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-                              ┌──────────────────┐
-                              │   Web Client     │
-                              │  (React + Atoms) │
-                              └────────┬─────────┘
-                                       │ WebSocket + requestId
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        RoomDurableObject (Cloudflare)                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐   │
-│  │ webSocketOpen() ──► Validate participant ──► Create session ──► Join  │   │
-│  │ webSocketClose() ──► Mark disconnected ──► Schedule rejoin timeout    │   │
-│  │ webSocketMessage() ──► Validate session ──► Route to Machine          │   │
-│  └───────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                        │
-│                                     ▼                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐   │
-│  │                    RoomMachine (Effect ProcedureList)                  │   │
-│  │                                                                        │   │
-│  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │   │
-│  │   │ PlayerJoin  │  │ SubmitTurn  │  │ GenerateNpc │  │ AdvanceStep │  │   │
-│  │   │             │  │ +requestId  │  │ +requestId  │  │ +idempotency│  │   │
-│  │   └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  │   │
-│  │          │                │                │                │         │   │
-│  │          ▼                ▼                ▼                ▼         │   │
-│  │   ┌──────────────────────────────────────────────────────────────┐   │   │
-│  │   │              Idempotency Layer (SQLite)                      │   │   │
-│  │   │  turn_requests | npc_turns_generated | alarm_processing      │   │   │
-│  │   └──────────────────────────────────────────────────────────────┘   │   │
-│  │                              │                                        │   │
-│  │                              ▼                                        │   │
-│  │   ┌──────────────────────────────────────────────────────────────┐   │   │
-│  │   │                   State Transitions                           │   │   │
-│  │   │                                                               │   │   │
-│  │   │   AwaitingTurn ──► Processing ──► NpcPending ──► AwaitingTurn │   │   │
-│  │   │        │                │                │              │      │   │   │
-│  │   │        └────────────────┴────────────────┴──────► Complete     │   │   │
-│  │   │                                                               │   │   │
-│  │   │   + participants: RoomParticipants (validated membership)     │   │   │
-│  │   └──────────────────────────────────────────────────────────────┘   │   │
-│  └───────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                        │
-│                                     ▼                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐   │
-│  │                    EventLog (Source of Truth)                         │   │
-│  │                                                                        │   │
-│  │   EventLog.write({ event, payload })                                  │   │
-│  │         │                                                              │   │
-│  │         ├──► EventJournal.write() ──► ATOMIC PERSIST                  │   │
-│  │         │         │                                                    │   │
-│  │         │         └──► effect: handler runs AFTER journal write       │   │
-│  │         │                    │                                         │   │
-│  │         │                    ├──► Persist room_state                   │   │
-│  │         │                    └──► Broadcast to clients                 │   │
-│  │         │                                                              │   │
-│  │         └──► EventLog.entries ──► getEventHistory() for replay        │   │
-│  └───────────────────────────────────────────────────────────────────────┘   │
-│                                     │                                        │
-│                                     │ DO Alarm (at-least-once)               │
-│                                     ▼                                        │
-│  ┌───────────────────────────────────────────────────────────────────────┐   │
-│  │                    alarm() Handler (with guard)                       │   │
-│  │                                                                        │   │
-│  │   if (alreadyFired(npcId, stepIndex, scheduledAt)) return;            │   │
-│  │   markAlarmFired({ ... });                                            │   │
-│  │   actor.send(new GenerateNpcTurn({ requestId, ... }));                │   │
-│  └───────────────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                       │
-                                       │ Queue (fire-and-forget)
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          ScoringPipeline (Decoupled)                         │
-│                                                                              │
-│   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │                     ScoringContextBuilder                           │    │
-│   │                                                                      │    │
-│   │   EventLog.entries ──► reduceToConversationHistory(limit=15)        │    │
-│   │                    ──► scenario + currentTurn + playerStats         │    │
-│   └─────────────────────────────────────────────────────────────────────┘    │
-│                                     │                                        │
-│                                     ▼                                        │
-│   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │                     Progressive Scoring                             │    │
-│   │                                                                      │    │
-│   │   computeFluency ──► ScoreFluency event                             │    │
-│   │   computeVocab   ──► ScoreVocab event                               │    │
-│   │   computeGrammar ──► ScoreGrammar event                             │    │
-│   │   LLM review     ──► ScoreLlmReview event                           │    │
-│   │   aggregate      ──► ScoreFinalized event                           │    │
-│   └─────────────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────────────┘
+Web Client (Browser)
+  │ WebSocket {sessionId, requestId}
+  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ RoomDurableObject (Cloudflare DO - per-room singleton)                      │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ Session/Auth + participant validation                                 │  │
+│  │ Command Router → IdempotencyStore (requestId → prior result)          │  │
+│  │ RoomMachine (commands → events via ProcedureList)                     │  │
+│  │ EventLog (append-only, source of truth)                               │  │
+│  │ Projections: RoomState snapshot + WebSocket broadcast                 │  │
+│  │ alarm() handler (at-least-once) → GenerateNpcTurn(requestId)          │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  ON TurnAccepted EVENT:                                                     │
+│    1. Persist event to EventLog (atomic)                                    │
+│    2. Enqueue to TURN_QUEUE (fire-and-forget)                               │
+│    3. Emit AdvanceStep immediately (does NOT wait for scoring)              │
+│    4. Broadcast state update to clients                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                               │
+                               │ Cloudflare Queue (async, decoupled)
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Queue Consumer (Cloudflare Worker - separate from DO)                       │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ TurnScoringConsumer                                                   │  │
+│  │   - Receives {roomId, turnId} from TURN_QUEUE                         │  │
+│  │   - Builds ScoringContext from EventLog (last 15 turns)               │  │
+│  │   - Runs scoring pipeline (fluency, vocab, grammar, LLM review)       │  │
+│  │   - Emits Score* events back to EventLog via DO POST                  │  │
+│  │   - Idempotent via processed_queue_messages table                     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+│  SCORING DOES NOT BLOCK TURN FLOW - it runs asynchronously after turn      │
+│  State advances immediately; scores appear later via event stream          │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Runtime Boundaries
+
+| Component | Runtime | Isolation | Purpose |
+| --------- | ------- | --------- | ------- |
+| **Web Client** | Browser | Per-user | UI, WebSocket connection, local state |
+| **RoomDurableObject** | Cloudflare DO | Per-room singleton | State machine, EventLog, WebSocket hub |
+| **Queue Consumer** | Cloudflare Worker | Shared pool | Async scoring, does NOT live in DO |
+| **D1 Database** | Cloudflare D1 | Shared | Turn records, idempotency tables |
+| **R2 Bucket** | Cloudflare R2 | Shared | Audio file storage |
+
+**Critical boundary**: Scoring runs in **Queue Consumer (Worker)**, NOT inside the Durable Object. This prevents scoring latency from blocking turn progression and keeps DO load minimal.
 
 ---
 
@@ -126,16 +84,16 @@
 
 These are **non-negotiable** architectural rules. Any code change that violates these must be flagged.
 
-| # | Invariant | Rationale |
-|---|-----------|-----------|
-| 1 | **EventLog is the single source of truth** | Events derive state; state is never persisted independently |
-| 2 | **All commands have requestId for idempotency** | Network retries, DO alarm re-fires (up to 7x) must be safe |
-| 3 | **State persisted atomically with events** | Use `journal.write().effect()` - never separate persist calls |
-| 4 | **Scoring is fire-and-forget via ctx.fork()** | Scoring does NOT block turn flow |
-| 5 | **AdvanceStep queued AFTER scoring completes** | Pattern A: `ctx.fork(scoring → ctx.send(AdvanceStep))` |
-| 6 | **DO alarms guarded by idempotency table** | Check `alarm_processing` before sending GenerateNpcTurn |
-| 7 | **WebSocket handlers validate session** | Every message must have valid sessionId |
-| 8 | **Participant membership tracked in state** | RoomParticipants with expected + active participants |
+| #   | Invariant                                   | Rationale                                                    |
+| --- | ------------------------------------------- | ------------------------------------------------------------ |
+| 1   | **EventLog is the single source of truth**  | Events derive state; state is never persisted independently  |
+| 2   | **All commands are idempotent via requestId** | Network retries and DO alarm re-fires must be safe          |
+| 3   | **Event append + projections are atomic**   | Use `journal.write().effect()` - no separate persist calls   |
+| 4   | **Scoring runs in Queue Consumer, not DO**  | Decoupled via Cloudflare Queue; never blocks turn flow       |
+| 5   | **AdvanceStep is emitted once per turn**    | Single advancement path; avoid double-advance races          |
+| 6   | **DO alarms are guarded by idempotency**    | Check guard store before GenerateNpcTurn                     |
+| 7   | **WebSocket handlers validate session**     | Every message must have valid sessionId                      |
+| 8   | **Participant membership tracked in state** | RoomParticipants with expected + active participants         |
 
 ---
 
@@ -162,17 +120,17 @@ const RoomMachine = Machine.make((input) =>
 // ctx.fork() is NON-BLOCKING (Effect.asVoid(FiberSet.run(...)))
 // Handler returns IMMEDIATELY after fork
 
-// CORRECT: Chain scoring → advancement inside fork
+// CORRECT: Fire-and-forget scoring; advancement is command-driven
 yield* ctx.fork(
-  scoreTurn(...).pipe(
-    Effect.flatMap(() => ctx.send(new AdvanceStep({ ... })))
-  )
+  scoreTurn(...)
 );
 return [{ turnId }, { _tag: "Processing" }];
 
-// WRONG: Immediate advancement after fork
-yield* ctx.fork(scoreTurn(...));
-yield* ctx.send(new AdvanceStep({ ... }));  // RACE CONDITION
+// WRONG: Two advancement paths for the same turn
+yield* ctx.fork(scoreTurn(...).pipe(
+  Effect.flatMap(() => ctx.send(new AdvanceStep({ ... })))
+));
+yield* ctx.send(new AdvanceStep({ ... }));  // DOUBLE-ADVANCE
 ```
 
 ### ctx.send() Semantics
@@ -205,7 +163,7 @@ yield* persistRoomState({ ... }); // RACE CONDITION
 
 ## State Machine Transitions
 
-```
+```text
                     ┌─────────────────┐
                     │   AwaitingTurn  │◄──────────────────────────┐
                     │   (participant) │                           │
@@ -214,12 +172,15 @@ yield* persistRoomState({ ... }); // RACE CONDITION
                              │ or GenerateNpcTurn (npc)           │
                              ▼                                    │
                     ┌─────────────────┐                           │
-                    │   Processing    │                           │
-                    │   (turnId)      │                           │
+                    │   Processing    │ ← TRANSIENT STATE         │
+                    │   (turnId)      │   (milliseconds only)     │
                     └────────┬────────┘                           │
-                             │ AdvanceStep                        │
-                             │ (after scoring for player,         │
-                             │  immediately for NPC)              │
+                             │ AdvanceStep (IMMEDIATE)            │
+                             │                                    │
+                             │ NOTE: AdvanceStep fires right      │
+                             │ after TurnAccepted. Processing     │
+                             │ does NOT wait for scoring.         │
+                             │ Scoring runs async in Queue.       │
                              ▼                                    │
               ┌──────────────┴──────────────┐                     │
               │                             │                     │
@@ -232,19 +193,27 @@ yield* persistRoomState({ ... }); // RACE CONDITION
               └───────────────────────────────────────────────────┘
 ```
 
+**Processing State Semantics:**
+
+- **Entry**: Turn accepted (TurnAccepted event emitted)
+- **Duration**: Milliseconds (only as long as AdvanceStep takes to process)
+- **Exit**: AdvanceStep fires immediately, NOT gated by scoring
+- **Scoring**: Runs asynchronously in Queue Consumer; Score* events arrive later
+- **Client UX**: Client sees turn accepted immediately; scores stream in progressively
+
 ---
 
 ## Tracked Issues
 
 These architectural issues have been identified and tracked:
 
-| Bead | Severity | Issue | Status |
-|------|----------|-------|--------|
-| ensayo_quest-9oz | P0 | Event-State Source of Truth | Open |
-| ensayo_quest-jq9 | P0 | Turn Progression Double-Advance | Open |
-| ensayo_quest-aw9 | P1 | Command Idempotency | Open |
-| ensayo_quest-8lv | P1 | Participant Membership/Auth | Open |
-| ensayo_quest-4mv | P2 | Scalability (deferred) | Open |
+| Bead             | Severity | Issue                          | Status |
+| ---------------- | -------- | ------------------------------ | ------ |
+| ensayo_quest-9oz | P0       | Event-State Source of Truth    | Open   |
+| ensayo_quest-jq9 | P0       | Turn Progression Double-Advance | Open   |
+| ensayo_quest-aw9 | P1       | Command Idempotency            | Open   |
+| ensayo_quest-8lv | P1       | Participant Membership/Auth    | Open   |
+| ensayo_quest-4mv | P2       | Scalability (deferred)         | Open   |
 
 See `docs/plans/2026-01-16-multiplayer-architecture-design.md` for full remediation details.
 
@@ -252,7 +221,9 @@ See `docs/plans/2026-01-16-multiplayer-architecture-design.md` for full remediat
 
 ## Changelog
 
-| Date | Change | Reason |
-|------|--------|--------|
-| 2026-01-16 | Initial architecture | Multiplayer design review |
-| 2026-01-16 | Added validated issues | Deep dive investigation |
+| Date       | Change                          | Reason                                     |
+| ---------- | ------------------------------- | ------------------------------------------ |
+| 2026-01-16 | Initial architecture            | Multiplayer design review                  |
+| 2026-01-16 | Added validated issues          | Deep dive investigation                    |
+| 2026-01-16 | Clarified scoring runtime       | Scoring in Queue Consumer, not DO          |
+| 2026-01-16 | Clarified Processing state      | Transient state, does not wait for scoring |
