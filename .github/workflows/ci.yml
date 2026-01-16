@@ -133,9 +133,10 @@ jobs:
       - name: Install wrangler
         run: bun add -g wrangler
 
-      # Symlink node_modules for wrangler bundler
-      - name: Link node_modules to apps
+      # Link root node_modules for wrangler bundler (Bun workspaces hoist deps)
+      - name: Link node_modules for wrangler
         run: |
+          rm -rf apps/api/node_modules apps/shared/node_modules
           ln -s ../../node_modules apps/api/node_modules
           ln -s ../../node_modules apps/shared/node_modules
 
@@ -181,9 +182,10 @@ jobs:
       - name: Install wrangler
         run: bun add -g wrangler
 
-      # Symlink node_modules for wrangler bundler
-      - name: Link node_modules to apps
+      # Link root node_modules for wrangler bundler (Bun workspaces hoist deps)
+      - name: Link node_modules for wrangler
         run: |
+          rm -rf apps/api/node_modules apps/shared/node_modules
           ln -s ../../node_modules apps/api/node_modules
           ln -s ../../node_modules apps/shared/node_modules
 

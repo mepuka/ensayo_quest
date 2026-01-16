@@ -12,6 +12,7 @@
         "@effect/experimental": "^0.58.0",
         "@effect/platform": "^0.94.1",
         "@effect/platform-browser": "^0.74.0",
+        "@effect/sql": "^0.49.0",
         "@effect/sql-d1": "^0.47.0",
         "@effect/sql-sqlite-bun": "^0.50.0",
         "@effect/sql-sqlite-do": "^0.27.0",
@@ -31,6 +32,24 @@
       },
       "peerDependencies": {
         "typescript": "^5",
+      },
+    },
+    "apps/api": {
+      "name": "@ensayo/api",
+      "version": "0.0.1",
+      "dependencies": {
+        "@ensayo/shared": "workspace:*",
+      },
+    },
+    "apps/shared": {
+      "name": "@ensayo/shared",
+      "version": "0.0.1",
+    },
+    "apps/web": {
+      "name": "@ensayo/web",
+      "version": "0.0.1",
+      "dependencies": {
+        "@ensayo/shared": "workspace:*",
       },
     },
   },
@@ -68,6 +87,12 @@
     "@effect/sql-sqlite-do": ["@effect/sql-sqlite-do@0.27.0", "", { "peerDependencies": { "@effect/experimental": "^0.58.0", "@effect/sql": "^0.49.0", "effect": "^3.19.13" } }, "sha512-+mkNGmmSWhhoNmiJfTQrVINPgcq19BLrdoq5JdF6GoL8lS2VA+XO7IRXTD3G1Plg5hTncmsX/1Y8W1Dc/DbKNQ=="],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.8.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-mehfKSMWjjNol8659Z8KxEMrdSJDDot5SXMq00dM8BN4o+CLNXQ0xH2V7EchNHV4RmbZLmmPdEaXZc5H2FXmDg=="],
+
+    "@ensayo/api": ["@ensayo/api@workspace:apps/api"],
+
+    "@ensayo/shared": ["@ensayo/shared@workspace:apps/shared"],
+
+    "@ensayo/web": ["@ensayo/web@workspace:apps/web"],
 
     "@huggingface/jinja": ["@huggingface/jinja@0.5.3", "", {}, "sha512-asqfZ4GQS0hD876Uw4qiUb7Tr/V5Q+JZuo2L+BtdrD4U40QU58nIRq3ZSgAzJgT874VLjhGVacaYfrdpXtEvtA=="],
 
