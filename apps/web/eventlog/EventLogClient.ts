@@ -31,12 +31,32 @@ export const roomEventStreamFromEntries = (
   entries: Stream.Stream<EventJournal.Entry>
 ): Stream.Stream<RoomEvent> => Stream.map(entries, decodeRoomEventEntry);
 
+/**
+ * Create IndexedDB-backed journal layer with fallback to memory.
+ *
+ * IndexedDB persistence ensures events survive page refresh and enables
+ * proper reconnection replay. Falls back to memory if IndexedDB is
+ * unavailable (e.g., private browsing, storage quota exceeded).
+ *
+ * @see docs/ARCHITECTURE.md - Invariant #1: EventLog is source of truth
+ */
+const makeJournalLayer = (roomId: string) =>
+  EventJournal.layerIndexedDb({ database: `ensayo-room-${roomId}` }).pipe(
+    Layer.catchAll((error) => {
+      console.warn(
+        `IndexedDB unavailable for room ${roomId}, falling back to memory:`,
+        error
+      );
+      return EventJournal.layerMemory;
+    })
+  );
+
 const makeRoomEventLayer = (roomId: string, url: string) => {
   const identityLayer = Layer.effect(EventLog.Identity, makeRoomIdentity(roomId)).pipe(
     Layer.provideMerge(EventLogEncryption.layerSubtle)
   );
   const base = Layer.mergeAll(
-    EventJournal.layerMemory,
+    makeJournalLayer(roomId),
     Socket.layerWebSocketConstructorGlobal,
     identityLayer
   );
