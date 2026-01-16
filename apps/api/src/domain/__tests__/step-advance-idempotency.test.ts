@@ -23,20 +23,17 @@ const makeTestIdempotencyLayer = () => {
     hasAdvanced: (roomId: string, fromStepIndex: number) =>
       Effect.sync(() => advances.has(`${roomId}:${fromStepIndex}`)),
 
-    recordAdvance: (roomId: string, fromStepIndex: number, toStepIndex: number) =>
-      Effect.gen(function* () {
-        const key = `${roomId}:${fromStepIndex}`;
-        if (advances.has(key)) {
-          yield* Effect.fail(
-            new RoomEventHandlerError({
-              operation: "recordAdvance",
-              roomId,
-              cause: new Error("PRIMARY KEY constraint violation")
-            })
-          );
-        }
-        advances.set(key, { toStepIndex, advancedAt: Date.now() });
-      })
+    recordAdvance: Effect.fn(function* (roomId: string, fromStepIndex: number, toStepIndex: number) {
+      const key = `${roomId}:${fromStepIndex}`;
+      if (advances.has(key)) {
+        return yield* new RoomEventHandlerError({
+          operation: "recordAdvance",
+          roomId,
+          cause: new Error("PRIMARY KEY constraint violation")
+        });
+      }
+      advances.set(key, { toStepIndex, advancedAt: Date.now() });
+    })
   });
 };
 

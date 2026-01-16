@@ -46022,7 +46022,7 @@ var ensureTranscriber = () => exports_Effect.tryPromise({
   try: async () => {
     if (!transcriber) {
       const asrPipeline = await pipeline("automatic-speech-recognition", "Xenova/whisper-base");
-      transcriber = async (audio2) => asrPipeline(audio2);
+      transcriber = async (audio2) => asrPipeline(audio2, { language: "spanish", task: "transcribe" });
     }
   },
   catch: (cause3) => new TranscriptionFailed({ reason: String(cause3) })

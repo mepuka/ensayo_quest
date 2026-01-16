@@ -214,30 +214,29 @@ export type RoomEventStreamWithStatus = {
  * EventLogRemote handles reconnection internally with exponential backoff
  * (100ms to 5s max). This wrapper surfaces that status to the UI.
  */
-export const makeRoomEventStreamWithStatus = (options: {
+export const makeRoomEventStreamWithStatus = Effect.fn(function* (options: {
   roomId: string;
   url: string;
-}): Effect.Effect<RoomEventStreamWithStatus, never, Scope.Scope> =>
-  Effect.gen(function* () {
-    // Create a subscription ref to track connection status
-    const statusRef = yield* SubscriptionRef.make(initialConnectionState);
+}) {
+  // Create a subscription ref to track connection status
+  const statusRef = yield* SubscriptionRef.make(initialConnectionState);
 
-    // Create the event stream with tracked WebSocket
-    const events = Stream.unwrapScoped(
-      Effect.gen(function* () {
-        const journal = yield* EventJournal.EventJournal;
-        const changes = yield* journal.changes;
-        return roomEventStreamFromEntries(Stream.fromQueue(changes));
-      })
-    ).pipe(
-      Stream.provideLayer(makeTrackedRoomEventLayer(options.roomId, options.url, statusRef))
-    );
+  // Create the event stream with tracked WebSocket
+  const events = Stream.unwrapScoped(
+    Effect.gen(function* () {
+      const journal = yield* EventJournal.EventJournal;
+      const changes = yield* journal.changes;
+      return roomEventStreamFromEntries(Stream.fromQueue(changes));
+    })
+  ).pipe(
+    Stream.provideLayer(makeTrackedRoomEventLayer(options.roomId, options.url, statusRef))
+  );
 
-    // Create a stream from the status ref changes (instance property)
-    const connectionStatus = statusRef.changes;
+  // Create a stream from the status ref changes (instance property)
+  const connectionStatus = statusRef.changes;
 
-    return { events, connectionStatus };
-  });
+  return { events, connectionStatus };
+});
 
 // =============================================================================
 // Shared Room Connection Manager

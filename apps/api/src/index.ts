@@ -211,7 +211,7 @@ export default {
       const consumer = yield* makeTurnScoringConsumer;
 
       yield* Effect.forEach(batch.messages, (message) =>
-        Effect.gen(function* () {
+        Effect.fn(function* () {
           // Idempotency check: skip if already processed
           const alreadyProcessed = yield* db.isMessageProcessed(message.id).pipe(
             Effect.catchAll(() => Effect.succeed(false))
@@ -229,7 +229,7 @@ export default {
             Effect.catchAll(() => Effect.void)
           );
           message.ack();
-        }).pipe(
+        })().pipe(
           // Retryable errors: retry the message
           Effect.catchTag("TurnScoringRetryableError", (err) =>
             Effect.sync(() => {
@@ -242,13 +242,6 @@ export default {
             Effect.sync(() => {
               console.error(`Non-retryable error for message ${message.id}: ${err.reason}`);
               message.ack(); // Don't retry - permanent failure
-            })
-          ),
-          // Unexpected errors: retry to be safe
-          Effect.catchAll((err) =>
-            Effect.sync(() => {
-              console.error(`Unexpected error for message ${message.id}:`, err);
-              message.retry();
             })
           )
         )

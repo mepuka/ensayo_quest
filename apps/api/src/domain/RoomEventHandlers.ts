@@ -137,13 +137,11 @@ export const StepAdvanceIdempotencyLive = Layer.effect(
 
     return {
       hasAdvanced: (roomId: string, fromStepIndex: number) =>
-        Effect.gen(function* () {
-          const rows = yield* sql<{ room_id: string }>`
-            SELECT room_id FROM room_step_advances
-            WHERE room_id = ${roomId} AND from_step_index = ${fromStepIndex}
-          `;
-          return rows.length > 0;
-        }).pipe(
+        sql<{ room_id: string }>`
+          SELECT room_id FROM room_step_advances
+          WHERE room_id = ${roomId} AND from_step_index = ${fromStepIndex}
+        `.pipe(
+          Effect.map((rows) => rows.length > 0),
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "hasAdvanced",
@@ -154,12 +152,11 @@ export const StepAdvanceIdempotencyLive = Layer.effect(
         ),
 
       recordAdvance: (roomId: string, fromStepIndex: number, toStepIndex: number) =>
-        Effect.gen(function* () {
-          yield* sql`
-            INSERT INTO room_step_advances (room_id, from_step_index, to_step_index, advanced_at)
-            VALUES (${roomId}, ${fromStepIndex}, ${toStepIndex}, ${Date.now()})
-          `;
-        }).pipe(
+        sql`
+          INSERT INTO room_step_advances (room_id, from_step_index, to_step_index, advanced_at)
+          VALUES (${roomId}, ${fromStepIndex}, ${toStepIndex}, ${Date.now()})
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "recordAdvance",
@@ -216,13 +213,11 @@ export const AlarmIdempotencyLive = Layer.effect(
 
     return {
       getProcessedTurnId: (npcId: string, stepIndex: number, scheduledAt: number) =>
-        Effect.gen(function* () {
-          const rows = yield* sql<{ turn_id: string }>`
-            SELECT turn_id FROM alarm_processing
-            WHERE npc_id = ${npcId} AND step_index = ${stepIndex} AND scheduled_at = ${scheduledAt}
-          `;
-          return rows.length > 0 ? rows[0]!.turn_id : null;
-        }).pipe(
+        sql<{ turn_id: string }>`
+          SELECT turn_id FROM alarm_processing
+          WHERE npc_id = ${npcId} AND step_index = ${stepIndex} AND scheduled_at = ${scheduledAt}
+        `.pipe(
+          Effect.map((rows) => rows.length > 0 ? rows[0]!.turn_id : null),
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "getProcessedTurnId",
@@ -233,12 +228,11 @@ export const AlarmIdempotencyLive = Layer.effect(
         ),
 
       recordAlarmProcessed: (npcId: string, stepIndex: number, scheduledAt: number, turnId: string) =>
-        Effect.gen(function* () {
-          yield* sql`
-            INSERT INTO alarm_processing (npc_id, step_index, scheduled_at, turn_id, processed_at)
-            VALUES (${npcId}, ${stepIndex}, ${scheduledAt}, ${turnId}, ${Date.now()})
-          `;
-        }).pipe(
+        sql`
+          INSERT INTO alarm_processing (npc_id, step_index, scheduled_at, turn_id, processed_at)
+          VALUES (${npcId}, ${stepIndex}, ${scheduledAt}, ${turnId}, ${Date.now()})
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "recordAlarmProcessed",
@@ -332,7 +326,7 @@ export const SessionValidationLive = Layer.effect(
 
     return {
       validateToken: (token: string, roomId: string) =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
           // MVP: Parse token as "userId:sessionId" or just use as userId
           // Production: Verify JWT signature and claims
           const now = Date.now();
@@ -349,26 +343,17 @@ export const SessionValidationLive = Layer.effect(
             connectedAt: now,
             lastActiveAt: now
           });
-        }).pipe(
-          Effect.mapError((cause) =>
-            new RoomEventHandlerError({
-              operation: "validateToken",
-              roomId,
-              cause
-            })
-          )
-        ),
+        }),
 
-      createSession: (session: ValidatedSession) =>
-        Effect.gen(function* () {
-          const metadataJson = session.metadata ? JSON.stringify(session.metadata) : null;
-          yield* sql`
-            INSERT INTO participant_sessions (session_id, user_id, connected_at, last_active_at, metadata_json)
-            VALUES (${session.sessionId}, ${session.userId}, ${session.connectedAt}, ${session.lastActiveAt}, ${metadataJson})
-            ON CONFLICT (session_id) DO UPDATE SET
-              last_active_at = ${session.lastActiveAt}
-          `;
-        }).pipe(
+      createSession: (session: ValidatedSession) => {
+        const metadataJson = session.metadata ? JSON.stringify(session.metadata) : null;
+        return sql`
+          INSERT INTO participant_sessions (session_id, user_id, connected_at, last_active_at, metadata_json)
+          VALUES (${session.sessionId}, ${session.userId}, ${session.connectedAt}, ${session.lastActiveAt}, ${metadataJson})
+          ON CONFLICT (session_id) DO UPDATE SET
+            last_active_at = ${session.lastActiveAt}
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "createSession",
@@ -376,32 +361,33 @@ export const SessionValidationLive = Layer.effect(
               cause
             })
           )
-        ),
+        );
+      },
 
       getSession: (sessionId: string) =>
-        Effect.gen(function* () {
-          const rows = yield* sql<{
-            session_id: string;
-            user_id: string;
-            connected_at: number;
-            last_active_at: number;
-            metadata_json: string | null;
-          }>`
-            SELECT session_id, user_id, connected_at, last_active_at, metadata_json
-            FROM participant_sessions
-            WHERE session_id = ${sessionId}
-          `;
-          if (rows.length === 0) return null;
-          const row = rows[0]!;
-          return new ValidatedSession({
-            sessionId: row.session_id,
-            userId: row.user_id,
-            roomId: "", // Not stored in this table, caller must know
-            connectedAt: row.connected_at,
-            lastActiveAt: row.last_active_at,
-            metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
-          });
-        }).pipe(
+        sql<{
+          session_id: string;
+          user_id: string;
+          connected_at: number;
+          last_active_at: number;
+          metadata_json: string | null;
+        }>`
+          SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+          FROM participant_sessions
+          WHERE session_id = ${sessionId}
+        `.pipe(
+          Effect.map((rows) => {
+            if (rows.length === 0) return null;
+            const row = rows[0]!;
+            return new ValidatedSession({
+              sessionId: row.session_id,
+              userId: row.user_id,
+              roomId: "", // Not stored in this table, caller must know
+              connectedAt: row.connected_at,
+              lastActiveAt: row.last_active_at,
+              metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
+            });
+          }),
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "getSession",
@@ -412,13 +398,12 @@ export const SessionValidationLive = Layer.effect(
         ),
 
       touchSession: (sessionId: string) =>
-        Effect.gen(function* () {
-          yield* sql`
-            UPDATE participant_sessions
-            SET last_active_at = ${Date.now()}
-            WHERE session_id = ${sessionId}
-          `;
-        }).pipe(
+        sql`
+          UPDATE participant_sessions
+          SET last_active_at = ${Date.now()}
+          WHERE session_id = ${sessionId}
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "touchSession",
@@ -429,12 +414,11 @@ export const SessionValidationLive = Layer.effect(
         ),
 
       deleteSession: (sessionId: string) =>
-        Effect.gen(function* () {
-          yield* sql`
-            DELETE FROM participant_sessions
-            WHERE session_id = ${sessionId}
-          `;
-        }).pipe(
+        sql`
+          DELETE FROM participant_sessions
+          WHERE session_id = ${sessionId}
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "deleteSession",
@@ -445,28 +429,26 @@ export const SessionValidationLive = Layer.effect(
         ),
 
       getSessionsForRoom: (_roomId: string) =>
-        Effect.gen(function* () {
-          // Note: This requires joining with room membership data
-          // For now, return all sessions (MVP simplification)
-          const rows = yield* sql<{
-            session_id: string;
-            user_id: string;
-            connected_at: number;
-            last_active_at: number;
-            metadata_json: string | null;
-          }>`
-            SELECT session_id, user_id, connected_at, last_active_at, metadata_json
-            FROM participant_sessions
-          `;
-          return rows.map(row => new ValidatedSession({
+        // Note: This requires joining with room membership data
+        // For now, return all sessions (MVP simplification)
+        sql<{
+          session_id: string;
+          user_id: string;
+          connected_at: number;
+          last_active_at: number;
+          metadata_json: string | null;
+        }>`
+          SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+          FROM participant_sessions
+        `.pipe(
+          Effect.map((rows) => rows.map(row => new ValidatedSession({
             sessionId: row.session_id,
             userId: row.user_id,
             roomId: "", // Caller provides this
             connectedAt: row.connected_at,
             lastActiveAt: row.last_active_at,
             metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
-          }));
-        }).pipe(
+          }))),
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "getSessionsForRoom",
@@ -503,17 +485,16 @@ export const RoomStatePersistenceLive = Layer.effect(
     const sql = yield* SqlClient.SqlClient;
 
     return {
-      upsertState: (roomId: string, projection: RoomProjection) =>
-        Effect.gen(function* () {
-          const stateJson = JSON.stringify(Schema.encodeSync(RoomProjection)(projection));
-          yield* sql`
-            INSERT INTO room_state (room_id, state_json, updated_at)
-            VALUES (${roomId}, ${stateJson}, ${projection.updatedAt})
-            ON CONFLICT (room_id) DO UPDATE SET
-              state_json = ${stateJson},
-              updated_at = ${projection.updatedAt}
-          `;
-        }).pipe(
+      upsertState: (roomId: string, projection: RoomProjection) => {
+        const stateJson = JSON.stringify(Schema.encodeSync(RoomProjection)(projection));
+        return sql`
+          INSERT INTO room_state (room_id, state_json, updated_at)
+          VALUES (${roomId}, ${stateJson}, ${projection.updatedAt})
+          ON CONFLICT (room_id) DO UPDATE SET
+            state_json = ${stateJson},
+            updated_at = ${projection.updatedAt}
+        `.pipe(
+          Effect.asVoid,
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "upsertState",
@@ -521,16 +502,17 @@ export const RoomStatePersistenceLive = Layer.effect(
               cause
             })
           )
-        ),
+        );
+      },
 
       getState: (roomId: string) =>
-        Effect.gen(function* () {
-          const rows = yield* sql<{ state_json: string }>`
-            SELECT state_json FROM room_state WHERE room_id = ${roomId}
-          `;
-          if (rows.length === 0) return null;
-          return Schema.decodeUnknownSync(RoomProjection)(JSON.parse(rows[0]!.state_json));
-        }).pipe(
+        sql<{ state_json: string }>`
+          SELECT state_json FROM room_state WHERE room_id = ${roomId}
+        `.pipe(
+          Effect.map((rows) => {
+            if (rows.length === 0) return null;
+            return Schema.decodeUnknownSync(RoomProjection)(JSON.parse(rows[0]!.state_json));
+          }),
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "getState",
@@ -550,25 +532,24 @@ export const RoomStatePersistenceLive = Layer.effect(
 /**
  * Helper to load current state or create initial state
  */
-const loadOrCreateState = (roomId: string, timestamp: number) =>
-  Effect.gen(function* () {
-    const persistence = yield* RoomStatePersistence;
-    const existing = yield* persistence.getState(roomId);
-    if (existing) return existing;
+const loadOrCreateState = Effect.fn(function* (roomId: string, timestamp: number) {
+  const persistence = yield* RoomStatePersistence;
+  const existing = yield* persistence.getState(roomId);
+  if (existing) return existing;
 
-    // Create initial state
-    return new RoomProjection({
-      roomId,
-      state: new AwaitingTurnState({
-        _tag: "AwaitingTurn",
-        participant: new ParticipantPlayer({ _tag: "Player", playerId: "" }),
-        stepIndex: 0
-      }),
-      participants: new RoomParticipants({ roomId, sessions: [] }),
-      currentStepIndex: 0,
-      updatedAt: timestamp
-    });
+  // Create initial state
+  return new RoomProjection({
+    roomId,
+    state: new AwaitingTurnState({
+      _tag: "AwaitingTurn",
+      participant: new ParticipantPlayer({ _tag: "Player", playerId: "" }),
+      stepIndex: 0
+    }),
+    participants: new RoomParticipants({ roomId, sessions: [] }),
+    currentStepIndex: 0,
+    updatedAt: timestamp
   });
+});
 
 /**
  * RoomEventHandlersLive - Event handlers that project state atomically
@@ -582,187 +563,171 @@ export const RoomEventHandlersLive = EventLog.group(
   RoomEventGroup,
   (handlers) =>
     handlers
-      .handle("TurnAccepted", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+      .handle("TurnAccepted", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          // Project: TurnAccepted -> Processing state
-          const newState = new RoomProjection({
-            ...current,
-            state: new ProcessingState({
-              _tag: "Processing",
-              turnId: payload.turnId,
-              participant: new ParticipantPlayer({ _tag: "Player", playerId: payload.playerId })
-            }),
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        // Project: TurnAccepted -> Processing state
+        const newState = new RoomProjection({
+          ...current,
+          state: new ProcessingState({
+            _tag: "Processing",
+            turnId: payload.turnId,
+            participant: new ParticipantPlayer({ _tag: "Player", playerId: payload.playerId })
+          }),
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("ScoreUpdated", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, Date.now());
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("ScoreUpdated", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, Date.now());
 
-          // ScoreUpdated doesn't change room state (scoring is decoupled)
-          // Just update lastEventId for tracking
-          const newState = new RoomProjection({
-            ...current,
-            lastEventId: entry.idString,
-            updatedAt: Date.now()
-          });
+        // ScoreUpdated doesn't change room state (scoring is decoupled)
+        // Just update lastEventId for tracking
+        const newState = new RoomProjection({
+          ...current,
+          lastEventId: entry.idString,
+          updatedAt: Date.now()
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("NpcTurnGenerated", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("NpcTurnGenerated", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          // Project: NpcTurnGenerated -> Processing (NPC's turn was generated)
-          const newState = new RoomProjection({
-            ...current,
-            state: new ProcessingState({
-              _tag: "Processing",
-              turnId: payload.turnId,
-              participant: new ParticipantNPC({ _tag: "NPC", npcId: payload.npcId, role: "narrator" })
-            }),
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        // Project: NpcTurnGenerated -> Processing (NPC's turn was generated)
+        const newState = new RoomProjection({
+          ...current,
+          state: new ProcessingState({
+            _tag: "Processing",
+            turnId: payload.turnId,
+            participant: new ParticipantNPC({ _tag: "NPC", npcId: payload.npcId, role: "narrator" })
+          }),
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("TurnAdvanced", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const idempotency = yield* StepAdvanceIdempotency;
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("TurnAdvanced", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const idempotency = yield* StepAdvanceIdempotency;
 
-          // Idempotency check: skip if already advanced from this step
-          // Prevents double-advance on retry (Architecture Invariant #5)
-          const alreadyAdvanced = yield* idempotency.hasAdvanced(payload.roomId, payload.fromStepIndex);
-          if (alreadyAdvanced) {
-            yield* Effect.logDebug(`Skipping duplicate TurnAdvanced for room ${payload.roomId} from step ${payload.fromStepIndex}`);
-            return;
-          }
+        // Idempotency check: skip if already advanced from this step
+        // Prevents double-advance on retry (Architecture Invariant #5)
+        const alreadyAdvanced = yield* idempotency.hasAdvanced(payload.roomId, payload.fromStepIndex);
+        if (alreadyAdvanced) {
+          yield* Effect.logDebug(`Skipping duplicate TurnAdvanced for room ${payload.roomId} from step ${payload.fromStepIndex}`);
+          return;
+        }
 
-          const current = yield* loadOrCreateState(payload.roomId, Date.now());
+        const current = yield* loadOrCreateState(payload.roomId, Date.now());
 
-          // Project: TurnAdvanced -> AwaitingTurn or NpcPending
-          const nextParticipant: ParticipantType =
-            payload.nextParticipantType === "Player"
-              ? new ParticipantPlayer({ _tag: "Player", playerId: payload.nextParticipantId })
-              : new ParticipantNPC({ _tag: "NPC", npcId: payload.nextParticipantId, role: "narrator" });
+        // Project: TurnAdvanced -> AwaitingTurn or NpcPending
+        const nextParticipant: ParticipantType =
+          payload.nextParticipantType === "Player"
+            ? new ParticipantPlayer({ _tag: "Player", playerId: payload.nextParticipantId })
+            : new ParticipantNPC({ _tag: "NPC", npcId: payload.nextParticipantId, role: "narrator" });
 
-          const newState = new RoomProjection({
-            ...current,
-            state: payload.nextParticipantType === "NPC"
-              ? new NpcPendingState({
-                  _tag: "NpcPending",
-                  npcId: payload.nextParticipantId,
-                  stepIndex: payload.toStepIndex,
-                  scheduledAt: Date.now()
-                })
-              : new AwaitingTurnState({
-                  _tag: "AwaitingTurn",
-                  participant: nextParticipant,
-                  stepIndex: payload.toStepIndex
-                }),
-            currentStepIndex: payload.toStepIndex,
-            lastEventId: entry.idString,
-            updatedAt: Date.now()
-          });
+        const newState = new RoomProjection({
+          ...current,
+          state: payload.nextParticipantType === "NPC"
+            ? new NpcPendingState({
+                _tag: "NpcPending",
+                npcId: payload.nextParticipantId,
+                stepIndex: payload.toStepIndex,
+                scheduledAt: Date.now()
+              })
+            : new AwaitingTurnState({
+                _tag: "AwaitingTurn",
+                participant: nextParticipant,
+                stepIndex: payload.toStepIndex
+              }),
+          currentStepIndex: payload.toStepIndex,
+          lastEventId: entry.idString,
+          updatedAt: Date.now()
+        });
 
-          // Record advance and persist state atomically
-          yield* idempotency.recordAdvance(payload.roomId, payload.fromStepIndex, payload.toStepIndex);
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("PlayerJoined", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+        // Record advance and persist state atomically
+        yield* idempotency.recordAdvance(payload.roomId, payload.fromStepIndex, payload.toStepIndex);
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("PlayerJoined", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          // Add player to participants
-          const newSession = new ParticipantSession({
-            playerId: payload.playerId,
-            sessionId: payload.sessionId,
-            connectedAt: payload.timestamp,
-            isConnected: true
-          });
+        // Add player to participants
+        const newSession = new ParticipantSession({
+          playerId: payload.playerId,
+          sessionId: payload.sessionId,
+          connectedAt: payload.timestamp,
+          isConnected: true
+        });
 
-          const newState = new RoomProjection({
-            ...current,
-            participants: new RoomParticipants({
-              roomId: payload.roomId,
-              sessions: [...current.participants.sessions, newSession]
-            }),
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        const newState = new RoomProjection({
+          ...current,
+          participants: new RoomParticipants({
+            roomId: payload.roomId,
+            sessions: [...current.participants.sessions, newSession]
+          }),
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("PlayerDisconnected", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("PlayerDisconnected", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          // Mark player as disconnected
-          const updatedSessions = current.participants.sessions.map((s) =>
-            s.sessionId === payload.sessionId
-              ? new ParticipantSession({ ...s, isConnected: false })
-              : s
-          );
+        // Mark player as disconnected
+        const updatedSessions = current.participants.sessions.map((s) =>
+          s.sessionId === payload.sessionId
+            ? new ParticipantSession({ ...s, isConnected: false })
+            : s
+        );
 
-          const newState = new RoomProjection({
-            ...current,
-            participants: new RoomParticipants({
-              roomId: payload.roomId,
-              sessions: updatedSessions
-            }),
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        const newState = new RoomProjection({
+          ...current,
+          participants: new RoomParticipants({
+            roomId: payload.roomId,
+            sessions: updatedSessions
+          }),
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("RoomCompleted", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("RoomCompleted", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          const newState = new RoomProjection({
-            ...current,
-            state: new CompleteState({ _tag: "Complete", summary: payload.summary }),
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        const newState = new RoomProjection({
+          ...current,
+          state: new CompleteState({ _tag: "Complete", summary: payload.summary }),
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
-      .handle("RoomError", ({ payload, entry }) =>
-        Effect.gen(function* () {
-          const persistence = yield* RoomStatePersistence;
-          const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("RoomError", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
-          // RoomError is logged but doesn't change state machine
-          // Could add error state if needed
-          const newState = new RoomProjection({
-            ...current,
-            lastEventId: entry.idString,
-            updatedAt: payload.timestamp
-          });
+        // RoomError is logged but doesn't change state machine
+        // Could add error state if needed
+        const newState = new RoomProjection({
+          ...current,
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
 
-          yield* persistence.upsertState(payload.roomId, newState);
-        })
-      )
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
 );

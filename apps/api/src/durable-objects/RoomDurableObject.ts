@@ -98,102 +98,101 @@ type EmitEventError = EventJournalError | RoomEventHandlerError;
  * For TurnAccepted, also emits TurnAdvanced to advance the turn progression.
  * The idempotency check in the TurnAdvanced handler prevents double-advance on retry.
  */
-const convertToPayload = (
+const convertToPayload = Effect.fn(function* (
   roomId: string,
   event: RoomEvent
-): Effect.Effect<void, EmitEventError, EventLog.EventLog | RoomStatePersistence> =>
-  Effect.gen(function* () {
-    const log = yield* EventLog.EventLog;
-    const persistence = yield* RoomStatePersistence;
-    const timestamp = Date.now();
+) {
+  const log = yield* EventLog.EventLog;
+  const persistence = yield* RoomStatePersistence;
+  const timestamp = Date.now();
 
-    switch (event.type) {
-      case "TurnAccepted": {
-        // Get current state to determine step indices
-        const currentState = yield* persistence.getState(roomId);
-        const currentStepIndex = currentState?.currentStepIndex ?? 0;
+  switch (event.type) {
+    case "TurnAccepted": {
+      // Get current state to determine step indices
+      const currentState = yield* persistence.getState(roomId);
+      const currentStepIndex = currentState?.currentStepIndex ?? 0;
 
-        // Emit TurnAccepted first (transitions to Processing)
-        yield* log.write({
-          schema: RoomEventSchema,
-          event: "TurnAccepted",
-          payload: new TurnAcceptedPayload({
-            roomId,
-            turnId: event.turnId,
-            playerId: "unknown", // TODO: Get from session context
-            transcript: "", // TODO: Get from request
-            timestamp
-          })
-        });
+      // Emit TurnAccepted first (transitions to Processing)
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "TurnAccepted",
+        payload: new TurnAcceptedPayload({
+          roomId,
+          turnId: event.turnId,
+          playerId: "unknown", // TODO: Get from session context
+          transcript: "", // TODO: Get from request
+          timestamp
+        })
+      });
 
-        // Emit TurnAdvanced to advance to next step
-        // Idempotency is handled in the TurnAdvanced handler
-        yield* log.write({
-          schema: RoomEventSchema,
-          event: "TurnAdvanced",
-          payload: new TurnAdvancedPayload({
-            roomId,
-            fromStepIndex: currentStepIndex,
-            toStepIndex: currentStepIndex + 1,
-            nextParticipantType: "Player", // TODO: Determine from scenario
-            nextParticipantId: "unknown" // TODO: Get next player from scenario
-          })
-        });
-        break;
-      }
-
-      case "ScoreUpdated":
-        yield* log.write({
-          schema: RoomEventSchema,
-          event: "ScoreUpdated",
-          payload: new ScoreUpdatedPayload({
-            roomId,
-            turnId: event.turnId,
-            scores: {
-              fluency: event.evaluation.scores.fluency,
-              vocab: event.evaluation.scores.vocab,
-              naturalness: event.evaluation.scores.naturalness
-            },
-            overallScore: event.evaluation.overallScore,
-            feedback: event.evaluation.feedback,
-            nextPrompt: event.evaluation.nextPrompt
-          })
-        });
-        break;
-
-      case "RoomCompleted":
-        yield* log.write({
-          schema: RoomEventSchema,
-          event: "RoomCompleted",
-          payload: new RoomCompletedPayload({
-            roomId,
-            summary: event.summary,
-            timestamp
-          })
-        });
-        break;
-
-      case "Error":
-        yield* log.write({
-          schema: RoomEventSchema,
-          event: "RoomError",
-          payload: new RoomErrorPayload({
-            roomId,
-            code: event.code,
-            message: event.message,
-            retryable: event.retryable,
-            timestamp
-          })
-        });
-        break;
-
-      case "RoomSnapshot":
-        // RoomSnapshot is a read event for clients, not persisted
-        // State is derived from events, not snapshots
-        yield* Effect.logDebug("RoomSnapshot is a read-only event, not persisted");
-        break;
+      // Emit TurnAdvanced to advance to next step
+      // Idempotency is handled in the TurnAdvanced handler
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "TurnAdvanced",
+        payload: new TurnAdvancedPayload({
+          roomId,
+          fromStepIndex: currentStepIndex,
+          toStepIndex: currentStepIndex + 1,
+          nextParticipantType: "Player", // TODO: Determine from scenario
+          nextParticipantId: "unknown" // TODO: Get next player from scenario
+        })
+      });
+      break;
     }
-  });
+
+    case "ScoreUpdated":
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "ScoreUpdated",
+        payload: new ScoreUpdatedPayload({
+          roomId,
+          turnId: event.turnId,
+          scores: {
+            fluency: event.evaluation.scores.fluency,
+            vocab: event.evaluation.scores.vocab,
+            naturalness: event.evaluation.scores.naturalness
+          },
+          overallScore: event.evaluation.overallScore,
+          feedback: event.evaluation.feedback,
+          nextPrompt: event.evaluation.nextPrompt
+        })
+      });
+      break;
+
+    case "RoomCompleted":
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "RoomCompleted",
+        payload: new RoomCompletedPayload({
+          roomId,
+          summary: event.summary,
+          timestamp
+        })
+      });
+      break;
+
+    case "Error":
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "RoomError",
+        payload: new RoomErrorPayload({
+          roomId,
+          code: event.code,
+          message: event.message,
+          retryable: event.retryable,
+          timestamp
+        })
+      });
+      break;
+
+    case "RoomSnapshot":
+      // RoomSnapshot is a read event for clients, not persisted
+      // State is derived from events, not snapshots
+      yield* Effect.logDebug("RoomSnapshot is a read-only event, not persisted");
+      break;
+  }
+});
 
 // =============================================================================
 // RoomDurableObject
