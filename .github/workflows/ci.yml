@@ -136,7 +136,7 @@ jobs:
       # D1 migrations (staging)
       - name: Run D1 migrations (staging)
         run: |
-          wrangler d1 migrations apply ensayo_quest --env staging --remote
+          wrangler d1 migrations apply DB --env staging --remote
         working-directory: apps/api
 
       # Deploy Workers (staging)
@@ -179,7 +179,7 @@ jobs:
       # D1 migrations (production)
       - name: Run D1 migrations (production)
         run: |
-          wrangler d1 migrations apply ensayo_quest --env production --remote
+          wrangler d1 migrations apply DB --env production --remote
         working-directory: apps/api
 
       # Deploy Workers (production)
