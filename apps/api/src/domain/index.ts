@@ -37,6 +37,9 @@ export {
   StepAdvanceIdempotencyLive,
   AlarmIdempotency,
   AlarmIdempotencyLive,
+  SessionValidation,
+  SessionValidationLive,
+  ValidatedSession,
   RoomProjection,
   ProjectedRoomState,
   AwaitingTurnState,
@@ -51,7 +54,7 @@ export {
 } from "./RoomEventHandlers.js";
 
 import { RoomEventGroup } from "./RoomEventGroup.js";
-import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive } from "./RoomEventHandlers.js";
+import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive, SessionValidationLive } from "./RoomEventHandlers.js";
 
 // =============================================================================
 // EventLog Schema
@@ -145,12 +148,15 @@ export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   Layer.provide(StepAdvanceIdempotencyLive),
   // Alarm idempotency for NPC turn generation
   Layer.provide(AlarmIdempotencyLive),
+  // Session validation for WebSocket connections (Architecture Invariants #7, #8)
+  Layer.provide(SessionValidationLive),
   // EventLog.layer requires EventJournal
   Layer.provide(RoomEventJournalLive),
   // EventLog.layer requires Identity
   Layer.provide(RoomIdentityLive),
-  // Merge all services into a single layer
-  Layer.provideMerge(RoomStatePersistenceLive)
+  // Merge services into a single layer for external access
+  Layer.provideMerge(RoomStatePersistenceLive),
+  Layer.provideMerge(SessionValidationLive)
 );
 
 /**

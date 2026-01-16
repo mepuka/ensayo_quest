@@ -62,6 +62,18 @@ CREATE TABLE IF NOT EXISTS alarm_processing (
   processed_at INTEGER NOT NULL,
   PRIMARY KEY (npc_id, step_index, scheduled_at)
 );
+
+-- Participant session tracking (Architecture Invariants #7, #8)
+-- Tracks active WebSocket connections with validated sessions
+CREATE TABLE IF NOT EXISTS participant_sessions (
+  session_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  connected_at INTEGER NOT NULL,
+  last_active_at INTEGER NOT NULL,
+  metadata_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_participant_sessions_user_id ON participant_sessions(user_id);
 `;
 
 export const applyRoomSchema = Effect.gen(function* () {

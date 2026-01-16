@@ -252,6 +252,234 @@ export const AlarmIdempotencyLive = Layer.effect(
 );
 
 // =============================================================================
+// Session Validation Service (Architecture Invariants #7, #8)
+// =============================================================================
+
+/**
+ * Validated session data for a connected WebSocket.
+ */
+export class ValidatedSession extends Schema.Class<ValidatedSession>("ValidatedSession")({
+  sessionId: Schema.String,
+  userId: Schema.String,
+  roomId: Schema.String,
+  connectedAt: Schema.Number,
+  lastActiveAt: Schema.Number,
+  metadata: Schema.optional(Schema.Unknown)
+}) {}
+
+/**
+ * Service to validate WebSocket sessions and track participant membership.
+ * Implements Architecture Invariants #7 (WebSocket handlers validate session)
+ * and #8 (participant membership tracked in state).
+ */
+export class SessionValidation extends Context.Tag("SessionValidation")<
+  SessionValidation,
+  {
+    /**
+     * Validate a session token and extract user identity.
+     * For MVP, accepts any token and extracts userId from it.
+     * In production, this would verify JWTs or session tokens.
+     */
+    readonly validateToken: (
+      token: string,
+      roomId: string
+    ) => Effect.Effect<ValidatedSession, RoomEventHandlerError>;
+
+    /**
+     * Create a new session record when WebSocket connects.
+     */
+    readonly createSession: (
+      session: ValidatedSession
+    ) => Effect.Effect<void, RoomEventHandlerError>;
+
+    /**
+     * Get an existing session by ID.
+     */
+    readonly getSession: (
+      sessionId: string
+    ) => Effect.Effect<ValidatedSession | null, RoomEventHandlerError>;
+
+    /**
+     * Update session's last active timestamp.
+     */
+    readonly touchSession: (
+      sessionId: string
+    ) => Effect.Effect<void, RoomEventHandlerError>;
+
+    /**
+     * Delete session when WebSocket disconnects.
+     */
+    readonly deleteSession: (
+      sessionId: string
+    ) => Effect.Effect<void, RoomEventHandlerError>;
+
+    /**
+     * Get all active sessions for a room.
+     */
+    readonly getSessionsForRoom: (
+      roomId: string
+    ) => Effect.Effect<ReadonlyArray<ValidatedSession>, RoomEventHandlerError>;
+  }
+>() {}
+
+/**
+ * SQL-based session validation using participant_sessions table.
+ */
+export const SessionValidationLive = Layer.effect(
+  SessionValidation,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    return {
+      validateToken: (token: string, roomId: string) =>
+        Effect.gen(function* () {
+          // MVP: Parse token as "userId:sessionId" or just use as userId
+          // Production: Verify JWT signature and claims
+          const now = Date.now();
+          const [userId, providedSessionId] = token.includes(":")
+            ? token.split(":")
+            : [token, crypto.randomUUID()];
+
+          const sessionId = providedSessionId || crypto.randomUUID();
+
+          return new ValidatedSession({
+            sessionId,
+            userId: userId || "anonymous",
+            roomId,
+            connectedAt: now,
+            lastActiveAt: now
+          });
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "validateToken",
+              roomId,
+              cause
+            })
+          )
+        ),
+
+      createSession: (session: ValidatedSession) =>
+        Effect.gen(function* () {
+          const metadataJson = session.metadata ? JSON.stringify(session.metadata) : null;
+          yield* sql`
+            INSERT INTO participant_sessions (session_id, user_id, connected_at, last_active_at, metadata_json)
+            VALUES (${session.sessionId}, ${session.userId}, ${session.connectedAt}, ${session.lastActiveAt}, ${metadataJson})
+            ON CONFLICT (session_id) DO UPDATE SET
+              last_active_at = ${session.lastActiveAt}
+          `;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "createSession",
+              roomId: session.roomId,
+              cause
+            })
+          )
+        ),
+
+      getSession: (sessionId: string) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<{
+            session_id: string;
+            user_id: string;
+            connected_at: number;
+            last_active_at: number;
+            metadata_json: string | null;
+          }>`
+            SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+            FROM participant_sessions
+            WHERE session_id = ${sessionId}
+          `;
+          if (rows.length === 0) return null;
+          const row = rows[0]!;
+          return new ValidatedSession({
+            sessionId: row.session_id,
+            userId: row.user_id,
+            roomId: "", // Not stored in this table, caller must know
+            connectedAt: row.connected_at,
+            lastActiveAt: row.last_active_at,
+            metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
+          });
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "getSession",
+              roomId: sessionId,
+              cause
+            })
+          )
+        ),
+
+      touchSession: (sessionId: string) =>
+        Effect.gen(function* () {
+          yield* sql`
+            UPDATE participant_sessions
+            SET last_active_at = ${Date.now()}
+            WHERE session_id = ${sessionId}
+          `;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "touchSession",
+              roomId: sessionId,
+              cause
+            })
+          )
+        ),
+
+      deleteSession: (sessionId: string) =>
+        Effect.gen(function* () {
+          yield* sql`
+            DELETE FROM participant_sessions
+            WHERE session_id = ${sessionId}
+          `;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "deleteSession",
+              roomId: sessionId,
+              cause
+            })
+          )
+        ),
+
+      getSessionsForRoom: (_roomId: string) =>
+        Effect.gen(function* () {
+          // Note: This requires joining with room membership data
+          // For now, return all sessions (MVP simplification)
+          const rows = yield* sql<{
+            session_id: string;
+            user_id: string;
+            connected_at: number;
+            last_active_at: number;
+            metadata_json: string | null;
+          }>`
+            SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+            FROM participant_sessions
+          `;
+          return rows.map(row => new ValidatedSession({
+            sessionId: row.session_id,
+            userId: row.user_id,
+            roomId: "", // Caller provides this
+            connectedAt: row.connected_at,
+            lastActiveAt: row.last_active_at,
+            metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
+          }));
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "getSessionsForRoom",
+              roomId: _roomId,
+              cause
+            })
+          )
+        )
+    };
+  })
+);
+
+// =============================================================================
 // State Persistence Service
 // =============================================================================
 
