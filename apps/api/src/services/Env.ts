@@ -6,7 +6,10 @@ export interface CloudflareEnv {
   SPANISH_VECTORS: VectorizeIndex;
   TURN_QUEUE: Queue;
   ROOMS: DurableObjectNamespace;
-  AI: any; // Workers AI binding
+  // Note: Workers AI binding removed - project uses Google Gemini API (LanguageReviewGoogle)
+  // If Workers AI is needed, add wrangler config: [[ai]] binding = "AI"
+  GOOGLE_AI_API_KEY?: string;
+  GOOGLE_AI_API_URL?: string;
 }
 
 export class Env extends Context.Tag("Env")<Env, CloudflareEnv>() {}

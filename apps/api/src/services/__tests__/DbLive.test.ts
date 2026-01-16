@@ -21,8 +21,7 @@ it("writes room and turn records via D1 binding", async () => {
     AUDIO_BUCKET: {} as R2Bucket,
     SPANISH_VECTORS: {} as VectorizeIndex,
     TURN_QUEUE: {} as Queue,
-    ROOMS: {} as DurableObjectNamespace,
-    AI: {}
+    ROOMS: {} as DurableObjectNamespace
   });
   const program = Effect.gen(function* () {
     const db = yield* Db;
@@ -64,8 +63,7 @@ it("writes turn score updates via D1 binding", async () => {
     AUDIO_BUCKET: {} as R2Bucket,
     SPANISH_VECTORS: {} as VectorizeIndex,
     TURN_QUEUE: {} as Queue,
-    ROOMS: {} as DurableObjectNamespace,
-    AI: {}
+    ROOMS: {} as DurableObjectNamespace
   });
   const program = Effect.gen(function* () {
     const db = yield* Db;

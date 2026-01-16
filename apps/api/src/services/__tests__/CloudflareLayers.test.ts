@@ -9,9 +9,7 @@ import {
   D1ClientLive,
   makeDoSqliteLayer,
   VectorIndex,
-  VectorIndexLive,
-  WorkersAi,
-  WorkersAiLive
+  VectorIndexLive
 } from "../CloudflareLayers";
 import { TurnQueue, TurnQueueLive } from "../TurnQueue";
 
@@ -29,15 +27,13 @@ const fakeQueue = {
 
 const fakeR2 = {} as unknown as R2Bucket;
 const fakeVector = {} as unknown as VectorizeIndex;
-const fakeAi = {} as unknown as object;
 
 const baseEnv = {
   DB: fakeD1,
   AUDIO_BUCKET: fakeR2,
   SPANISH_VECTORS: fakeVector,
   TURN_QUEUE: fakeQueue,
-  ROOMS: {} as DurableObjectNamespace,
-  AI: fakeAi
+  ROOMS: {} as DurableObjectNamespace
 };
 
 it("builds a D1 client layer from Env", async () => {
@@ -84,16 +80,6 @@ it("exposes Vectorize binding via service", async () => {
   });
   const result = await Effect.runPromise(program.pipe(Effect.provide(layer)));
   expect(result).toBe(fakeVector);
-});
-
-it("exposes Workers AI binding via service", async () => {
-  const layer = Layer.provideMerge(Layer.succeed(Env, baseEnv))(WorkersAiLive);
-  const program = Effect.gen(function* () {
-    const ai = yield* WorkersAi;
-    return ai;
-  });
-  const result = await Effect.runPromise(program.pipe(Effect.provide(layer)));
-  expect(result).toBe(fakeAi);
 });
 
 it("wraps queue binding for TurnQueue service", async () => {

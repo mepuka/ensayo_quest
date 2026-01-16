@@ -21,8 +21,7 @@ it("sends room events to the DO endpoint", async () => {
     TURN_QUEUE: {} as Queue,
     ROOMS: {
       get: () => stub
-    } as unknown as DurableObjectNamespace,
-    AI: {}
+    } as unknown as DurableObjectNamespace
   });
   const event = new RoomSnapshot({
     type: "RoomSnapshot",

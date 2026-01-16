@@ -11,11 +11,6 @@ export class AudioBucket extends Context.Tag("AudioBucket")<AudioBucket, R2Bucke
 
 export class VectorIndex extends Context.Tag("VectorIndex")<VectorIndex, VectorizeIndex>() {}
 
-export class WorkersAi extends Context.Tag("WorkersAi")<
-  WorkersAi,
-  CloudflareEnv["AI"]
->() {}
-
 export const D1ClientLive = Layer.unwrapEffect(
   Effect.gen(function* () {
     const env = yield* Env;
@@ -42,10 +37,4 @@ export const VectorIndexLive = Layer.effect(
   })
 );
 
-export const WorkersAiLive = Layer.effect(
-  WorkersAi,
-  Effect.gen(function* () {
-    const env = yield* Env;
-    return env.AI;
-  })
-);
+// Note: WorkersAiLive removed - project uses Google Gemini API (LanguageReviewGoogle)

@@ -1,8 +1,10 @@
 import { Context, Effect, Layer } from "effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { TurnEvaluation } from "../domain/RoomProtocol";
 import { scoreFluency } from "../scoring/Fluency";
 import { scoreRoleVocab } from "../scoring/Vocab";
+import { LanguageReview } from "./LanguageReview";
 
 export const ScoringWeights = Schema.Struct({
   fluency: Schema.Number,
@@ -81,20 +83,43 @@ export const ScoringServiceLive = Layer.effect(
   Effect.gen(function* () {
     const config = yield* ScoringConfig;
     const evaluate = Effect.fn(function* (input: TurnScoringInput) {
+      const reviewer = yield* Effect.serviceOption(LanguageReview);
+      const reviewInput = {
+        mode: "spoken" as const,
+        language: "es",
+        transcript: input.transcript,
+        audioFeatures: {
+          durationMs: input.audioStats.totalMs,
+          pauseCount: input.audioStats.segments.length,
+          speakingRateWpm: 0
+        },
+        targetVocab: input.targetVocab
+      };
+      const reviewResult = yield* Option.match(reviewer, {
+        onNone: () => Effect.succeed(Option.none()),
+        onSome: (service) =>
+          service.review(reviewInput).pipe(
+            Effect.map(Option.some),
+            Effect.catchAll(() => Effect.succeed(Option.none()))
+          )
+      });
+      const reviewOutput = Option.getOrUndefined(reviewResult);
       const scores = {
         fluency: scoreFluency(input.audioStats, input.transcript),
         vocab: scoreRoleVocab(input.transcript, input.targetVocab),
-        naturalness: 0
+        naturalness: reviewOutput ? reviewOutput.subscores.naturalness : 0
       };
       const overallScore = scoreOverall(config.weights, scores);
       return new TurnEvaluation({
         turnId: input.turnId,
         scores,
         overallScore,
-        feedback: [],
-        nextPrompt: "",
-        modelVersion: config.modelVersion,
-        confidence: 0
+        feedback: reviewOutput
+          ? [...reviewOutput.feedback.wins, ...reviewOutput.feedback.fixes]
+          : [],
+        nextPrompt: reviewOutput ? reviewOutput.nextPrompt : "",
+        modelVersion: reviewOutput ? reviewOutput.modelVersion : config.modelVersion,
+        confidence: reviewOutput ? reviewOutput.confidence : 0
       });
     });
     return { evaluate };
