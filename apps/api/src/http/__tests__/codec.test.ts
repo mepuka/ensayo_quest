@@ -6,6 +6,7 @@ it("encodes and decodes JSON with schema", () => {
   const payload = new HttpTurnSubmission({
     roomId: "room-1",
     turnId: "turn-1",
+    requestId: "req-1",
     transcript: "hola",
     language: "es",
     clientTimestamp: 123,

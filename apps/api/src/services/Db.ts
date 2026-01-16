@@ -24,6 +24,13 @@ export interface DbService {
     overall: number;
     detailJson: string;
   }) => Effect.Effect<void, DbError, never>;
+  // Queue idempotency
+  isMessageProcessed: (messageId: string) => Effect.Effect<boolean, DbError, never>;
+  markMessageProcessed: (messageId: string) => Effect.Effect<void, DbError, never>;
+  cleanupOldProcessedMessages: (olderThanMs: number) => Effect.Effect<void, DbError, never>;
+  // Turn request idempotency (Architecture Invariant #2)
+  getTurnByRequestId: (roomId: string, requestId: string) => Effect.Effect<string | null, DbError, never>;
+  recordTurnRequest: (roomId: string, requestId: string, turnId: string) => Effect.Effect<void, DbError, never>;
 }
 
 export class Db extends Context.Tag("Db")<Db, DbService>() {}
@@ -195,7 +202,31 @@ export const DbLive = Layer.effect(
           input.turnId,
           input.overall,
           input.detailJson
-        ])
+        ]),
+      // Queue idempotency
+      isMessageProcessed: (messageId: string) =>
+        Effect.tryPromise({
+          try: () => env.DB.prepare(queries.checkMessageProcessed).bind(messageId).first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(Effect.map((row) => row !== null)),
+      markMessageProcessed: (messageId: string) =>
+        run(queries.markMessageProcessed, [messageId, Date.now()]),
+      cleanupOldProcessedMessages: (olderThanMs: number) =>
+        run(queries.cleanupOldProcessedMessages, [Date.now() - olderThanMs]),
+      // Turn request idempotency (Architecture Invariant #2)
+      getTurnByRequestId: (roomId: string, requestId: string) =>
+        Effect.tryPromise({
+          try: () => env.DB.prepare(queries.getTurnByRequestId).bind(roomId, requestId).first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.map((row) => {
+            if (!row) return null;
+            const record = row as Record<string, unknown>;
+            return String(record.turn_id ?? "");
+          })
+        ),
+      recordTurnRequest: (roomId: string, requestId: string, turnId: string) =>
+        run(queries.recordTurnRequest, [roomId, requestId, turnId, Date.now()])
     };
   })
 );

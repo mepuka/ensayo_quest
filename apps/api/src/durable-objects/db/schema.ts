@@ -51,6 +51,17 @@ CREATE TABLE IF NOT EXISTS room_step_advances (
   advanced_at INTEGER NOT NULL,
   PRIMARY KEY (room_id, from_step_index)
 );
+
+-- Idempotency table for alarm processing (Architecture Invariant #6)
+-- Prevents duplicate NPC turn generation on alarm retry (up to 7 times)
+CREATE TABLE IF NOT EXISTS alarm_processing (
+  npc_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL,
+  scheduled_at INTEGER NOT NULL,
+  turn_id TEXT NOT NULL,
+  processed_at INTEGER NOT NULL,
+  PRIMARY KEY (npc_id, step_index, scheduled_at)
+);
 `;
 
 export const applyRoomSchema = Effect.gen(function* () {

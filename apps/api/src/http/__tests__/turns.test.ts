@@ -56,7 +56,12 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
         getRoomTemplateId: () => Effect.succeed("tmp"),
         getNextTurnIndex: () => Effect.succeed(0),
         updateTurnAudioKey: () => Effect.void,
-        updateTurnScore: () => Effect.void
+        updateTurnScore: () => Effect.void,
+        isMessageProcessed: () => Effect.succeed(false),
+        markMessageProcessed: () => Effect.void,
+        cleanupOldProcessedMessages: () => Effect.void,
+        getTurnByRequestId: () => Effect.succeed(null),
+        recordTurnRequest: () => Effect.void
       }),
       Effect.provideService(RoomIdGenerator, {
         generate: Effect.sync(() => "room-1")
@@ -75,6 +80,7 @@ it("submitTurn enqueues a job for valid input", async () => {
   let emitted: Array<string> = [];
   const input = {
     roomId: "r",
+    requestId: "req-1",
     transcript: "hola",
     language: "es",
     clientTimestamp: 123,
@@ -123,7 +129,12 @@ it("submitTurn enqueues a job for valid input", async () => {
             roleRubrics: []
           }),
         updateTurnAudioKey: () => Effect.void,
-        updateTurnScore: () => Effect.void
+        updateTurnScore: () => Effect.void,
+        isMessageProcessed: () => Effect.succeed(false),
+        markMessageProcessed: () => Effect.void,
+        cleanupOldProcessedMessages: () => Effect.void,
+        getTurnByRequestId: () => Effect.succeed(null),
+        recordTurnRequest: () => Effect.void
       }),
       Effect.provideService(TurnQueue, {
         enqueueTurn: (job) =>
@@ -164,6 +175,7 @@ it("submitTurn rejects when Turnstile check fails", async () => {
   let emitted: Array<string> = [];
   const input = {
     roomId: "r",
+    requestId: "req-2",
     transcript: "hola",
     language: "es",
     clientTimestamp: 123,
@@ -213,7 +225,12 @@ it("submitTurn rejects when Turnstile check fails", async () => {
               roleRubrics: []
             }),
           updateTurnAudioKey: () => Effect.void,
-          updateTurnScore: () => Effect.void
+          updateTurnScore: () => Effect.void,
+          isMessageProcessed: () => Effect.succeed(false),
+          markMessageProcessed: () => Effect.void,
+          cleanupOldProcessedMessages: () => Effect.void,
+          getTurnByRequestId: () => Effect.succeed(null),
+          recordTurnRequest: () => Effect.void
         }),
         Effect.provideService(TurnQueue, {
           enqueueTurn: (job) =>

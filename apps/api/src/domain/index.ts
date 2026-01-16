@@ -35,6 +35,8 @@ export {
   RoomStatePersistenceLive,
   StepAdvanceIdempotency,
   StepAdvanceIdempotencyLive,
+  AlarmIdempotency,
+  AlarmIdempotencyLive,
   RoomProjection,
   ProjectedRoomState,
   AwaitingTurnState,
@@ -49,7 +51,7 @@ export {
 } from "./RoomEventHandlers.js";
 
 import { RoomEventGroup } from "./RoomEventGroup.js";
-import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive } from "./RoomEventHandlers.js";
+import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive } from "./RoomEventHandlers.js";
 
 // =============================================================================
 // EventLog Schema
@@ -123,7 +125,8 @@ export const RoomIdentityLive = Layer.sync(EventLog.Identity, () =>
  * 2. RoomEventHandlersLive provides handlers, requires RoomStatePersistence + StepAdvanceIdempotency
  * 3. RoomStatePersistenceLive requires SqlClient
  * 4. StepAdvanceIdempotencyLive requires SqlClient
- * 5. RoomEventJournalLive requires SqlClient
+ * 5. AlarmIdempotencyLive requires SqlClient
+ * 6. RoomEventJournalLive requires SqlClient
  *
  * @example
  * ```typescript
@@ -140,6 +143,8 @@ export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   // Handlers require RoomStatePersistence + StepAdvanceIdempotency
   Layer.provide(RoomStatePersistenceLive),
   Layer.provide(StepAdvanceIdempotencyLive),
+  // Alarm idempotency for NPC turn generation
+  Layer.provide(AlarmIdempotencyLive),
   // EventLog.layer requires EventJournal
   Layer.provide(RoomEventJournalLive),
   // EventLog.layer requires Identity

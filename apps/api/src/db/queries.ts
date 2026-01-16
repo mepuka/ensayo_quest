@@ -16,5 +16,17 @@ export const queries = {
   selectScenarioTemplateByTopicLevel:
     "SELECT template_json FROM scenario_templates WHERE topic = ? AND level = ? LIMIT 1",
   updateTurnScore:
-    "INSERT INTO turn_scores (turn_id, overall, detail_json) VALUES (?, ?, ?) ON CONFLICT(turn_id) DO UPDATE SET overall = excluded.overall, detail_json = excluded.detail_json"
+    "INSERT INTO turn_scores (turn_id, overall, detail_json) VALUES (?, ?, ?) ON CONFLICT(turn_id) DO UPDATE SET overall = excluded.overall, detail_json = excluded.detail_json",
+  // Queue idempotency
+  checkMessageProcessed:
+    "SELECT 1 FROM processed_queue_messages WHERE id = ?",
+  markMessageProcessed:
+    "INSERT INTO processed_queue_messages (id, processed_at) VALUES (?, ?)",
+  cleanupOldProcessedMessages:
+    "DELETE FROM processed_queue_messages WHERE processed_at < ?",
+  // Turn request idempotency (Architecture Invariant #2)
+  getTurnByRequestId:
+    "SELECT turn_id FROM turn_requests WHERE room_id = ? AND request_id = ?",
+  recordTurnRequest:
+    "INSERT INTO turn_requests (room_id, request_id, turn_id, created_at) VALUES (?, ?, ?, ?)"
 };

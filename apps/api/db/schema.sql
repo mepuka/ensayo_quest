@@ -60,3 +60,21 @@ CREATE TABLE IF NOT EXISTS vocab_items (
 
 CREATE INDEX IF NOT EXISTS idx_turns_room_id ON turns(room_id);
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_source_id ON kb_chunks(source_id);
+
+-- Queue idempotency tracking
+CREATE TABLE IF NOT EXISTS processed_queue_messages (
+  id TEXT PRIMARY KEY,
+  processed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_processed_queue_messages_at ON processed_queue_messages(processed_at);
+
+-- Turn request idempotency tracking (Architecture Invariant #2)
+-- Prevents duplicate turn creation on client retry
+CREATE TABLE IF NOT EXISTS turn_requests (
+  room_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (room_id, request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_turn_requests_room_id ON turn_requests(room_id);

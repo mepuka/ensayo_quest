@@ -25,6 +25,8 @@ export class HttpErrorResponse extends Schema.Class<HttpErrorResponse>("HttpErro
 export class HttpTurnSubmission extends Schema.Class<HttpTurnSubmission>("HttpTurnSubmission")({
   roomId: Schema.String,
   turnId: Schema.optional(Schema.String),
+  /** Client-generated unique ID for idempotency. Required for retry safety. */
+  requestId: Schema.String,
   transcript: Schema.String,
   language: Schema.String,
   clientTimestamp: Schema.Number,

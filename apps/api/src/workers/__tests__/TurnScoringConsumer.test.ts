@@ -73,7 +73,12 @@ it("scores turn and emits ScoreUpdated", async () => {
             targetGrammar: []
           }
         ]
-      })
+      }),
+    isMessageProcessed: () => Effect.succeed(false),
+    markMessageProcessed: () => Effect.void,
+    cleanupOldProcessedMessages: () => Effect.void,
+    getTurnByRequestId: () => Effect.succeed(null),
+    recordTurnRequest: () => Effect.void
   });
   const scoringLayer = Layer.succeed(ScoringService, {
     evaluate: (input) =>

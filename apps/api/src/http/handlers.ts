@@ -69,6 +69,15 @@ export const submitTurn = Effect.fn(function* (
       return yield* new TurnstileFailed({ reason: "turnstile_failed" });
     }
   }
+
+  // Idempotency check: return cached turnId if request already processed
+  // Architecture Invariant #2: All commands are idempotent via requestId
+  const existingTurnId = yield* db.getTurnByRequestId(roomId, submission.requestId);
+  if (existingTurnId) {
+    yield* Effect.logDebug(`Returning cached turnId for requestId ${submission.requestId}`);
+    return { turnId: existingTurnId, status: "processing" as const };
+  }
+
   const templateId = yield* db.getRoomTemplateId(roomId);
   const turnIndex = yield* db.getNextTurnIndex(roomId);
   const turnId = yield* generator.generate;
@@ -87,6 +96,10 @@ export const submitTurn = Effect.fn(function* (
     }
   });
   yield* db.insertTurn(derived);
+
+  // Record request → turnId mapping for idempotency
+  yield* db.recordTurnRequest(roomId, submission.requestId, turnId);
+
   yield* queue.enqueueTurn({
     roomId,
     turnId,

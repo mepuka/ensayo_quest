@@ -5,6 +5,7 @@ it("decodes HTTP TurnSubmission payloads", () => {
   const decoded = decodeHttpTurnSubmission({
     roomId: "room-1",
     turnId: "turn-1",
+    requestId: "req-1",
     transcript: "hola",
     language: "es",
     clientTimestamp: 123,

@@ -57,7 +57,12 @@ it("stores audio and updates audio key", async () => {
           Effect.sync(() => {
             updatedKey = input.audioKey;
           }),
-        updateTurnScore: () => Effect.void
+        updateTurnScore: () => Effect.void,
+        isMessageProcessed: () => Effect.succeed(false),
+        markMessageProcessed: () => Effect.void,
+        cleanupOldProcessedMessages: () => Effect.void,
+        getTurnByRequestId: () => Effect.succeed(null),
+        recordTurnRequest: () => Effect.void
       })
     )
   );
@@ -107,7 +112,12 @@ it("rejects audio upload for missing turns", async () => {
               roleRubrics: []
             }),
           updateTurnAudioKey: () => Effect.void,
-          updateTurnScore: () => Effect.void
+          updateTurnScore: () => Effect.void,
+          isMessageProcessed: () => Effect.succeed(false),
+          markMessageProcessed: () => Effect.void,
+          cleanupOldProcessedMessages: () => Effect.void,
+          getTurnByRequestId: () => Effect.succeed(null),
+          recordTurnRequest: () => Effect.void
         })
       )
     )

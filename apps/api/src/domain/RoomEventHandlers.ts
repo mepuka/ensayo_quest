@@ -173,6 +173,85 @@ export const StepAdvanceIdempotencyLive = Layer.effect(
 );
 
 // =============================================================================
+// Alarm Idempotency Service
+// =============================================================================
+
+/**
+ * Service to ensure alarm-triggered NPC turns are idempotent.
+ * Prevents duplicate NPC turn generation on alarm retry (Architecture Invariant #6).
+ * DO alarms can fire up to 7 times with at-least-once semantics.
+ */
+export class AlarmIdempotency extends Context.Tag("AlarmIdempotency")<
+  AlarmIdempotency,
+  {
+    /**
+     * Check if an alarm for this NPC/step has already been processed.
+     * Returns the existing turnId if already processed, null otherwise.
+     */
+    readonly getProcessedTurnId: (
+      npcId: string,
+      stepIndex: number,
+      scheduledAt: number
+    ) => Effect.Effect<string | null, RoomEventHandlerError>;
+    /**
+     * Record that an alarm has been processed and generated a turn.
+     * Should be called before generating the NPC turn.
+     */
+    readonly recordAlarmProcessed: (
+      npcId: string,
+      stepIndex: number,
+      scheduledAt: number,
+      turnId: string
+    ) => Effect.Effect<void, RoomEventHandlerError>;
+  }
+>() {}
+
+/**
+ * SQL-based alarm idempotency using alarm_processing table.
+ */
+export const AlarmIdempotencyLive = Layer.effect(
+  AlarmIdempotency,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    return {
+      getProcessedTurnId: (npcId: string, stepIndex: number, scheduledAt: number) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<{ turn_id: string }>`
+            SELECT turn_id FROM alarm_processing
+            WHERE npc_id = ${npcId} AND step_index = ${stepIndex} AND scheduled_at = ${scheduledAt}
+          `;
+          return rows.length > 0 ? rows[0]!.turn_id : null;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "getProcessedTurnId",
+              roomId: npcId,
+              cause
+            })
+          )
+        ),
+
+      recordAlarmProcessed: (npcId: string, stepIndex: number, scheduledAt: number, turnId: string) =>
+        Effect.gen(function* () {
+          yield* sql`
+            INSERT INTO alarm_processing (npc_id, step_index, scheduled_at, turn_id, processed_at)
+            VALUES (${npcId}, ${stepIndex}, ${scheduledAt}, ${turnId}, ${Date.now()})
+          `;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "recordAlarmProcessed",
+              roomId: npcId,
+              cause
+            })
+          )
+        )
+    };
+  })
+);
+
+// =============================================================================
 // State Persistence Service
 // =============================================================================
 
