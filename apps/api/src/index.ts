@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 import * as Schema from "effect/Schema";
-import type { MessageBatch } from "@cloudflare/workers-types";
+import type { MessageBatch, ExecutionContext } from "@cloudflare/workers-types";
 import { encodeJson } from "./http/codec";
 import { handlers } from "./http/handlers";
 import { CreateRoomRequest, CreateRoomResponse, TurnAudioResponse } from "./domain/HttpProtocol";
@@ -128,7 +128,11 @@ const getRoomStub = (env: CloudflareEnv, roomId: string) => {
 export { RoomDurableObject };
 
 export default {
-  async fetch(request: Request, env: CloudflareEnv): Promise<Response> {
+  async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
+    // ctx.waitUntil() available for background work after response is sent
+    // Usage: ctx.waitUntil(Effect.runPromise(backgroundEffect))
+    void ctx; // Mark as intentionally unused until needed
+
     const url = new URL(request.url);
     const segments = url.pathname.split("/").filter(Boolean);
     const method = request.method.toUpperCase();
@@ -210,7 +214,8 @@ export default {
     return withCors(response);
   },
 
-  async queue(batch: MessageBatch, env: CloudflareEnv): Promise<void> {
+  async queue(batch: MessageBatch, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> {
+    void ctx; // Available for background work if needed
     const appLayer = makeAppLayer(env);
     const program = Effect.gen(function* () {
       const db = yield* Db;

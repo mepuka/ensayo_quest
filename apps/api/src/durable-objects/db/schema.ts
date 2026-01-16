@@ -76,11 +76,22 @@ CREATE TABLE IF NOT EXISTS participant_sessions (
 CREATE INDEX IF NOT EXISTS idx_participant_sessions_user_id ON participant_sessions(user_id);
 `;
 
+/**
+ * Apply the room schema to the DO's SQLite database.
+ *
+ * Wrapped in a transaction for atomicity - if any statement fails,
+ * all changes are rolled back. All statements use IF NOT EXISTS
+ * for idempotency (safe to re-run on every DO wake).
+ */
 export const applyRoomSchema = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  for (const statement of roomSchemaSql.split(";")) {
-    const trimmed = statement.trim();
-    if (!trimmed) continue;
-    yield* sql.unsafe(trimmed).withoutTransform;
-  }
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      for (const statement of roomSchemaSql.split(";")) {
+        const trimmed = statement.trim();
+        if (!trimmed) continue;
+        yield* sql.unsafe(trimmed).withoutTransform;
+      }
+    })
+  );
 });
