@@ -134,8 +134,10 @@ jobs:
         run: bun add -g wrangler
 
       # Symlink node_modules for wrangler bundler
-      - name: Link node_modules to apps/api
-        run: ln -s ../../node_modules apps/api/node_modules
+      - name: Link node_modules to apps
+        run: |
+          ln -s ../../node_modules apps/api/node_modules
+          ln -s ../../node_modules apps/shared/node_modules
 
       # D1 migrations (staging)
       - name: Run D1 migrations (staging)
@@ -180,8 +182,10 @@ jobs:
         run: bun add -g wrangler
 
       # Symlink node_modules for wrangler bundler
-      - name: Link node_modules to apps/api
-        run: ln -s ../../node_modules apps/api/node_modules
+      - name: Link node_modules to apps
+        run: |
+          ln -s ../../node_modules apps/api/node_modules
+          ln -s ../../node_modules apps/shared/node_modules
 
       # D1 migrations (production)
       - name: Run D1 migrations (production)
