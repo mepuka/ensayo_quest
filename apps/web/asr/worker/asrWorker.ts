@@ -18,7 +18,8 @@ const ensureTranscriber = () =>
     try: async () => {
       if (!transcriber) {
         const asrPipeline = await pipeline("automatic-speech-recognition", "Xenova/whisper-base");
-        transcriber = async (audio) => asrPipeline(audio);
+        transcriber = async (audio) =>
+          asrPipeline(audio, { language: "spanish", task: "transcribe" });
       }
     },
     catch: (cause) => new TranscriptionFailed({ reason: String(cause) })

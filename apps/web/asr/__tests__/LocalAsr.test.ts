@@ -23,7 +23,10 @@ it("returns a LocalASR instance", () => {
     stream: Stream.empty
   });
   const layer = Layer.mergeAll(workerLayer, spawnerLayer, captureLayer);
-  const program = makeLocalAsr.pipe(Effect.provide(layer));
+  const program = makeLocalAsr.pipe(
+    Effect.provide(layer),
+    Effect.scoped // Required because makeLocalAsr uses scoped worker resources
+  );
   return Effect.runPromise(
     Effect.map(program, (localAsr) => {
       expect(localAsr.start).toBeDefined();

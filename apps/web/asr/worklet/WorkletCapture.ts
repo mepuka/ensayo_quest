@@ -3,10 +3,18 @@ import { WorkletInitFailed } from "../errors";
 
 export const workletName = "audio-processor";
 
+export const buildWorkletUrl = (baseUrl: string) =>
+  new URL("/audioProcessor.js", baseUrl).toString();
+
+export type WorkletChunk = {
+  samples: Float32Array;
+  sampleRate: number;
+};
+
 export interface WorkletCaptureService {
   start: () => Effect.Effect<void, WorkletInitFailed, never>;
   stop: () => Effect.Effect<void, WorkletInitFailed, never>;
-  stream: Stream.Stream<Float32Array, never, never>;
+  stream: Stream.Stream<WorkletChunk, never, never>;
 }
 
 export class WorkletCapture extends Context.Tag("WorkletCapture")<
@@ -20,8 +28,13 @@ type CaptureState = {
   node: AudioWorkletNode;
 };
 
+// Audio queue capacity: At 16kHz with ~128 samples/chunk, we get ~125 chunks/sec
+// 200 chunks = ~1.6 seconds buffer - enough for ASR latency without unbounded growth
+const AUDIO_QUEUE_CAPACITY = 200;
+
 const makeCapture = Effect.gen(function* () {
-  const queue = yield* Queue.unbounded<Float32Array>();
+  // Use sliding queue - drops oldest audio when full (better than backpressure for real-time audio)
+  const queue = yield* Queue.sliding<WorkletChunk>(AUDIO_QUEUE_CAPACITY);
   const state = yield* Ref.make<CaptureState | null>(null);
 
   const start = Effect.fn(function* () {
@@ -33,16 +46,16 @@ const makeCapture = Effect.gen(function* () {
         try: () => navigator.mediaDevices.getUserMedia({ audio: true }),
         catch: (cause) => new WorkletInitFailed({ reason: String(cause) })
       });
-      const context = new AudioContext();
+      const context = new AudioContext({ sampleRate: 16000 });
       yield* Effect.tryPromise({
-        try: () => context.audioWorklet.addModule(new URL("./audioProcessor.ts", import.meta.url)),
+        try: () => context.audioWorklet.addModule(buildWorkletUrl(window.location.href)),
         catch: (cause) => new WorkletInitFailed({ reason: String(cause) })
       });
       const source = context.createMediaStreamSource(media);
       const node = new AudioWorkletNode(context, workletName);
       node.port.onmessage = (event: MessageEvent) => {
         if (event.data instanceof Float32Array) {
-          Queue.unsafeOffer(queue, event.data);
+          Queue.unsafeOffer(queue, { samples: event.data, sampleRate: context.sampleRate });
         }
       };
       source.connect(node);
