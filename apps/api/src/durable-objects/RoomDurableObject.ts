@@ -29,9 +29,11 @@ import {
   RoomEventSchema,
   RoomEventHandlerError,
   TurnAcceptedPayload,
+  TurnAdvancedPayload,
   ScoreUpdatedPayload,
   RoomCompletedPayload,
   RoomErrorPayload,
+  RoomStatePersistence,
   type RoomDomainContext
 } from "../domain/index.js";
 import { EventJournalError } from "@effect/experimental/EventJournal";
@@ -71,17 +73,26 @@ type EmitEventError = EventJournalError | RoomEventHandlerError;
 /**
  * Convert legacy RoomEvent to domain event payloads.
  * This bridges the old protocol events to the new typed payloads.
+ *
+ * For TurnAccepted, also emits TurnAdvanced to advance the turn progression.
+ * The idempotency check in the TurnAdvanced handler prevents double-advance on retry.
  */
 const convertToPayload = (
   roomId: string,
   event: RoomEvent
-): Effect.Effect<void, EmitEventError, EventLog.EventLog> =>
+): Effect.Effect<void, EmitEventError, EventLog.EventLog | RoomStatePersistence> =>
   Effect.gen(function* () {
     const log = yield* EventLog.EventLog;
+    const persistence = yield* RoomStatePersistence;
     const timestamp = Date.now();
 
     switch (event.type) {
-      case "TurnAccepted":
+      case "TurnAccepted": {
+        // Get current state to determine step indices
+        const currentState = yield* persistence.getState(roomId);
+        const currentStepIndex = currentState?.currentStepIndex ?? 0;
+
+        // Emit TurnAccepted first (transitions to Processing)
         yield* log.write({
           schema: RoomEventSchema,
           event: "TurnAccepted",
@@ -93,7 +104,22 @@ const convertToPayload = (
             timestamp
           })
         });
+
+        // Emit TurnAdvanced to advance to next step
+        // Idempotency is handled in the TurnAdvanced handler
+        yield* log.write({
+          schema: RoomEventSchema,
+          event: "TurnAdvanced",
+          payload: new TurnAdvancedPayload({
+            roomId,
+            fromStepIndex: currentStepIndex,
+            toStepIndex: currentStepIndex + 1,
+            nextParticipantType: "Player", // TODO: Determine from scenario
+            nextParticipantId: "unknown" // TODO: Get next player from scenario
+          })
+        });
         break;
+      }
 
       case "ScoreUpdated":
         yield* log.write({

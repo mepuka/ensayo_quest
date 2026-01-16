@@ -104,6 +104,75 @@ export class RoomProjection extends Schema.Class<RoomProjection>("RoomProjection
 }) {}
 
 // =============================================================================
+// Step Advance Idempotency Service
+// =============================================================================
+
+/**
+ * Service to ensure step advances are idempotent.
+ * Prevents double-advance on retry (Architecture Invariant #5).
+ */
+export class StepAdvanceIdempotency extends Context.Tag("StepAdvanceIdempotency")<
+  StepAdvanceIdempotency,
+  {
+    /**
+     * Check if an advance from this step has already been recorded.
+     * Returns true if already advanced (should skip), false if not yet advanced.
+     */
+    readonly hasAdvanced: (roomId: string, fromStepIndex: number) => Effect.Effect<boolean, RoomEventHandlerError>;
+    /**
+     * Record that an advance from this step has occurred.
+     * Should be called atomically with the state update.
+     */
+    readonly recordAdvance: (roomId: string, fromStepIndex: number, toStepIndex: number) => Effect.Effect<void, RoomEventHandlerError>;
+  }
+>() {}
+
+/**
+ * SQL-based step advance idempotency using room_step_advances table.
+ */
+export const StepAdvanceIdempotencyLive = Layer.effect(
+  StepAdvanceIdempotency,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    return {
+      hasAdvanced: (roomId: string, fromStepIndex: number) =>
+        Effect.gen(function* () {
+          const rows = yield* sql<{ room_id: string }>`
+            SELECT room_id FROM room_step_advances
+            WHERE room_id = ${roomId} AND from_step_index = ${fromStepIndex}
+          `;
+          return rows.length > 0;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "hasAdvanced",
+              roomId,
+              cause
+            })
+          )
+        ),
+
+      recordAdvance: (roomId: string, fromStepIndex: number, toStepIndex: number) =>
+        Effect.gen(function* () {
+          yield* sql`
+            INSERT INTO room_step_advances (room_id, from_step_index, to_step_index, advanced_at)
+            VALUES (${roomId}, ${fromStepIndex}, ${toStepIndex}, ${Date.now()})
+          `;
+        }).pipe(
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "recordAdvance",
+              roomId,
+              cause
+            })
+          )
+        )
+    };
+  })
+);
+
+// =============================================================================
 // State Persistence Service
 // =============================================================================
 
@@ -265,6 +334,16 @@ export const RoomEventHandlersLive = EventLog.group(
       .handle("TurnAdvanced", ({ payload, entry }) =>
         Effect.gen(function* () {
           const persistence = yield* RoomStatePersistence;
+          const idempotency = yield* StepAdvanceIdempotency;
+
+          // Idempotency check: skip if already advanced from this step
+          // Prevents double-advance on retry (Architecture Invariant #5)
+          const alreadyAdvanced = yield* idempotency.hasAdvanced(payload.roomId, payload.fromStepIndex);
+          if (alreadyAdvanced) {
+            yield* Effect.logDebug(`Skipping duplicate TurnAdvanced for room ${payload.roomId} from step ${payload.fromStepIndex}`);
+            return;
+          }
+
           const current = yield* loadOrCreateState(payload.roomId, Date.now());
 
           // Project: TurnAdvanced -> AwaitingTurn or NpcPending
@@ -292,6 +371,8 @@ export const RoomEventHandlersLive = EventLog.group(
             updatedAt: Date.now()
           });
 
+          // Record advance and persist state atomically
+          yield* idempotency.recordAdvance(payload.roomId, payload.fromStepIndex, payload.toStepIndex);
           yield* persistence.upsertState(payload.roomId, newState);
         })
       )

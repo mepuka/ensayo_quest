@@ -33,6 +33,8 @@ export {
   RoomEventHandlersLive,
   RoomStatePersistence,
   RoomStatePersistenceLive,
+  StepAdvanceIdempotency,
+  StepAdvanceIdempotencyLive,
   RoomProjection,
   ProjectedRoomState,
   AwaitingTurnState,
@@ -47,7 +49,7 @@ export {
 } from "./RoomEventHandlers.js";
 
 import { RoomEventGroup } from "./RoomEventGroup.js";
-import { RoomEventHandlersLive, RoomStatePersistenceLive } from "./RoomEventHandlers.js";
+import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive } from "./RoomEventHandlers.js";
 
 // =============================================================================
 // EventLog Schema
@@ -118,9 +120,10 @@ export const RoomIdentityLive = Layer.sync(EventLog.Identity, () =>
  *
  * Layer composition order:
  * 1. EventLog.layer requires handlers, journal, identity
- * 2. RoomEventHandlersLive provides handlers, requires RoomStatePersistence
+ * 2. RoomEventHandlersLive provides handlers, requires RoomStatePersistence + StepAdvanceIdempotency
  * 3. RoomStatePersistenceLive requires SqlClient
- * 4. RoomEventJournalLive requires SqlClient
+ * 4. StepAdvanceIdempotencyLive requires SqlClient
+ * 5. RoomEventJournalLive requires SqlClient
  *
  * @example
  * ```typescript
@@ -134,8 +137,9 @@ export const RoomIdentityLive = Layer.sync(EventLog.Identity, () =>
 export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   // EventLog.layer requires handlers + journal + identity
   Layer.provide(RoomEventHandlersLive),
-  // Handlers require RoomStatePersistence
+  // Handlers require RoomStatePersistence + StepAdvanceIdempotency
   Layer.provide(RoomStatePersistenceLive),
+  Layer.provide(StepAdvanceIdempotencyLive),
   // EventLog.layer requires EventJournal
   Layer.provide(RoomEventJournalLive),
   // EventLog.layer requires Identity
