@@ -130,6 +130,9 @@ jobs:
           name: web-dist
           path: apps/web/dist
 
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
       - name: Install wrangler
         run: bun add -g wrangler
 
@@ -178,6 +181,9 @@ jobs:
         with:
           name: web-dist
           path: apps/web/dist
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Install wrangler
         run: bun add -g wrangler
