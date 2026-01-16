@@ -79,7 +79,7 @@ it("scores turn and emits ScoreUpdated", async () => {
     cleanupOldProcessedMessages: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
     recordTurnRequest: () => Effect.void,
-    getAudioUploadByTurnId: () => Effect.succeed(null),
+    getAudioUploadByTurnId: () => Effect.succeed({ audioKey: "turns/t1", requestId: "req-1" }),
     getAudioUploadByRequestId: () => Effect.succeed(null),
     recordAudioUpload: () => Effect.void,
     recordAudioUploadRequest: () => Effect.void
@@ -124,4 +124,105 @@ it("scores turn and emits ScoreUpdated", async () => {
     targetVocab: ["adios"]
   });
   expect(emitted).toEqual(["ScoreUpdated"]);
+});
+
+it("skips scoring when AudioUploaded not found (defense in depth)", async () => {
+  let updated = false;
+  let emitted: Array<string> = [];
+  let scoringCalled = false;
+
+  const dbLayer = Layer.succeed(Db, {
+    createRoom: () => Effect.void,
+    insertTurn: () => Effect.void,
+    updateTurnScore: () =>
+      Effect.sync(() => {
+        updated = true;
+      }),
+    updateTurnAudioKey: () => Effect.void,
+    getRoomTemplateId: () => Effect.succeed("template-1"),
+    getNextTurnIndex: () => Effect.succeed(0),
+    findScenarioTemplate: () =>
+      Effect.succeed({
+        templateId: "template-1",
+        topic: "travel",
+        level: "A2",
+        seedPrompt: "Hola",
+        turnPlan: [],
+        roleRubrics: []
+      }),
+    getTurnSubmission: () =>
+      Effect.succeed({
+        roomId: "r1",
+        turnId: "t1",
+        templateId: "template-1",
+        turnIndex: 0,
+        speakerUserId: "user-1",
+        transcript: "hola",
+        audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] }
+      }),
+    getScenarioTemplate: () =>
+      Effect.succeed({
+        templateId: "template-1",
+        topic: "travel",
+        level: "A2",
+        seedPrompt: "Hola",
+        turnPlan: [],
+        roleRubrics: []
+      }),
+    isMessageProcessed: () => Effect.succeed(false),
+    markMessageProcessed: () => Effect.void,
+    cleanupOldProcessedMessages: () => Effect.void,
+    getTurnByRequestId: () => Effect.succeed(null),
+    recordTurnRequest: () => Effect.void,
+    // No audio upload exists - this should trigger the defense in depth skip
+    getAudioUploadByTurnId: () => Effect.succeed(null),
+    getAudioUploadByRequestId: () => Effect.succeed(null),
+    recordAudioUpload: () => Effect.void,
+    recordAudioUploadRequest: () => Effect.void
+  });
+
+  const scoringLayer = Layer.succeed(ScoringService, {
+    evaluate: () =>
+      Effect.sync(() => {
+        scoringCalled = true;
+        return new TurnEvaluation({
+          turnId: "t1",
+          scores: { fluency: 80, vocab: 20, naturalness: 60 },
+          overallScore: 70,
+          feedback: [],
+          nextPrompt: "",
+          modelVersion: "test",
+          confidence: 0.8
+        });
+      })
+  });
+
+  const doLayer = Layer.succeed(RoomDoClient, {
+    emitRoomEvent: (_roomId, event) =>
+      Effect.sync(() => {
+        emitted.push(event.type);
+      })
+  });
+
+  const consumer = await Effect.runPromise(
+    makeTurnScoringConsumer.pipe(
+      Effect.provide(Layer.mergeAll(dbLayer, scoringLayer, doLayer))
+    )
+  );
+
+  // Should complete without error (ACK the message)
+  await Effect.runPromise(
+    consumer.handle({
+      roomId: "r1",
+      turnId: "t1",
+      status: "final"
+    })
+  );
+
+  // Scoring should NOT have been called
+  expect(scoringCalled).toBe(false);
+  // Score should NOT have been updated
+  expect(updated).toBe(false);
+  // No events should have been emitted
+  expect(emitted).toEqual([]);
 });

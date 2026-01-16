@@ -34,12 +34,31 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
   const db = yield* Db;
   const roomDo = yield* RoomDoClient;
   const scoring = yield* ScoringService;
-  const handle = Effect.fn(function* (payload: unknown) {
+  const handle = Effect.fn("TurnScoringConsumer.handle")(function* (payload: unknown) {
       // Decode errors are non-retryable - invalid payload won't become valid
       const job = yield* Effect.try({
         try: () => decodeQueueJob(payload),
         catch: (cause) => new TurnScoringNonRetryableError({ reason: `Invalid payload: ${cause}` })
       });
+
+      // Defense in depth: Verify AudioUploaded exists before scoring
+      // @see docs/ARCHITECTURE.md - Invariant #9: Scoring gated on AudioUploaded
+      // This handles edge cases where queue job exists but audio wasn't uploaded
+      const audioUpload = yield* db.getAudioUploadByTurnId(job.turnId).pipe(
+        Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
+      );
+
+      if (!audioUpload) {
+        // No audio upload found - ACK message to prevent infinite retry
+        // This can happen if:
+        // 1. Effect.fork in AudioUploaded handler failed after idempotency record
+        // 2. Manual queue re-enqueue without corresponding audio upload
+        yield* Effect.logWarning(
+          `Skipping scoring for turn ${job.turnId}: AudioUploaded not found (defense in depth)`
+        );
+        return;
+      }
+
       // Not found errors are non-retryable - data won't appear on retry
       const submission = yield* db.getTurnSubmission(job.turnId).pipe(
         Effect.mapError((cause) => {
