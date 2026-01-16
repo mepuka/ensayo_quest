@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS vocab_items (
 
 CREATE INDEX IF NOT EXISTS idx_turns_room_id ON turns(room_id);
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_source_id ON kb_chunks(source_id);
+CREATE INDEX IF NOT EXISTS idx_scenario_templates_topic_level ON scenario_templates(topic, level);
 
 -- Queue idempotency tracking
 CREATE TABLE IF NOT EXISTS processed_queue_messages (

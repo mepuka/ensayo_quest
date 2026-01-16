@@ -106,7 +106,7 @@ type EmitEventError = EventJournalError | RoomEventHandlerError;
  * For TurnAccepted, also emits TurnAdvanced to advance the turn progression.
  * The idempotency check in the TurnAdvanced handler prevents double-advance on retry.
  */
-const convertToPayload = Effect.fn(function* (
+const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(function* (
   roomId: string,
   event: RoomEvent
 ) {

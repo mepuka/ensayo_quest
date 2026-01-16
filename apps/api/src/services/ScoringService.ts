@@ -82,7 +82,7 @@ export const ScoringServiceLive = Layer.effect(
   ScoringService,
   Effect.gen(function* () {
     const config = yield* ScoringConfig;
-    const evaluate = Effect.fn(function* (input: TurnScoringInput) {
+    const evaluate = Effect.fn("ScoringService.evaluate")(function* (input: TurnScoringInput) {
       const reviewer = yield* Effect.serviceOption(LanguageReview);
       const reviewInput = {
         mode: "spoken" as const,

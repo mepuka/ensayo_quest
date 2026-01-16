@@ -217,7 +217,7 @@ export default {
       const consumer = yield* makeTurnScoringConsumer;
 
       yield* Effect.forEach(batch.messages, (message) =>
-        Effect.fn(function* () {
+        Effect.fn("queue.processMessage")(function* () {
           // Idempotency check: skip if already processed
           const alreadyProcessed = yield* db.isMessageProcessed(message.id).pipe(
             Effect.catchAll(() => Effect.succeed(false))

@@ -67,11 +67,14 @@ const makeTestRoomDoClient = (onEmit?: (roomId: string, event: unknown) => void)
   }
 });
 
+// Valid audio size for tests (MIN_AUDIO_SIZE = 100)
+const makeTestAudio = (size = 200) => new Uint8Array(size).buffer;
+
 it("stores audio and updates audio key", async () => {
   let storedKey = "";
   let updatedKey = "";
   let emittedEvent: unknown = null;
-  const audio = new Uint8Array([1, 2, 3]).buffer;
+  const audio = makeTestAudio();
 
   const result = await Effect.runPromise(
     uploadTurnAudio({
@@ -103,7 +106,7 @@ it("stores audio and updates audio key", async () => {
 
 it("rejects audio upload for missing turns", async () => {
   let storedKey = "";
-  const audio = new Uint8Array([1, 2, 3]).buffer;
+  const audio = makeTestAudio();
 
   const result = await Effect.runPromise(
     Effect.either(
@@ -130,7 +133,7 @@ it("rejects audio upload for missing turns", async () => {
 it("returns existing audio key for duplicate turn upload", async () => {
   let storedKey = "";
   let emittedCount = 0;
-  const audio = new Uint8Array([1, 2, 3]).buffer;
+  const audio = makeTestAudio();
 
   const result = await Effect.runPromise(
     uploadTurnAudio({
@@ -156,7 +159,7 @@ it("returns existing audio key for duplicate turn upload", async () => {
 });
 
 it("rejects upload when room ID does not match turn", async () => {
-  const audio = new Uint8Array([1, 2, 3]).buffer;
+  const audio = makeTestAudio();
 
   const result = await Effect.runPromise(
     Effect.either(
@@ -177,5 +180,83 @@ it("rejects upload when room ID does not match turn", async () => {
   expect(result._tag).toBe("Left");
   if (result._tag === "Left") {
     expect(result.left._tag).toBe("AudioUploadFailed");
+  }
+});
+
+it("rejects audio that is too small", async () => {
+  const tinyAudio = new Uint8Array(10).buffer; // Below MIN_AUDIO_SIZE
+
+  const result = await Effect.runPromise(
+    Effect.either(
+      uploadTurnAudio({
+        turnId: "t1",
+        roomId: "r1",
+        requestId: "req1",
+        audio: tinyAudio,
+        contentType: "audio/webm"
+      }).pipe(
+        Effect.provideService(AudioBucket, makeTestBucket()),
+        Effect.provideService(Db, makeTestDb()),
+        Effect.provideService(RoomDoClient, makeTestRoomDoClient())
+      )
+    )
+  );
+
+  expect(result._tag).toBe("Left");
+  if (result._tag === "Left") {
+    expect(result.left._tag).toBe("AudioUploadFailed");
+    expect(result.left.reason).toContain("audio_too_small");
+  }
+});
+
+it("rejects audio that is too large", async () => {
+  const hugeAudio = new Uint8Array(11 * 1024 * 1024).buffer; // Above MAX_AUDIO_SIZE (10MB)
+
+  const result = await Effect.runPromise(
+    Effect.either(
+      uploadTurnAudio({
+        turnId: "t1",
+        roomId: "r1",
+        requestId: "req1",
+        audio: hugeAudio,
+        contentType: "audio/webm"
+      }).pipe(
+        Effect.provideService(AudioBucket, makeTestBucket()),
+        Effect.provideService(Db, makeTestDb()),
+        Effect.provideService(RoomDoClient, makeTestRoomDoClient())
+      )
+    )
+  );
+
+  expect(result._tag).toBe("Left");
+  if (result._tag === "Left") {
+    expect(result.left._tag).toBe("AudioUploadFailed");
+    expect(result.left.reason).toContain("audio_too_large");
+  }
+});
+
+it("rejects invalid content type", async () => {
+  const audio = makeTestAudio();
+
+  const result = await Effect.runPromise(
+    Effect.either(
+      uploadTurnAudio({
+        turnId: "t1",
+        roomId: "r1",
+        requestId: "req1",
+        audio,
+        contentType: "video/mp4" // Not an allowed audio type
+      }).pipe(
+        Effect.provideService(AudioBucket, makeTestBucket()),
+        Effect.provideService(Db, makeTestDb()),
+        Effect.provideService(RoomDoClient, makeTestRoomDoClient())
+      )
+    )
+  );
+
+  expect(result._tag).toBe("Left");
+  if (result._tag === "Left") {
+    expect(result.left._tag).toBe("AudioUploadFailed");
+    expect(result.left.reason).toContain("invalid_content_type");
   }
 });

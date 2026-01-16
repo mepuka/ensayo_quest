@@ -1,2 +1,8 @@
 [test]
-exclude = ["effect/**", "**/.local/**", "../.local/**", "../../.local/**"]
+# Exclude Effect source (symlinked from ~/.local/share/effect-solutions/effect)
+# The symlink is followed by bun, so we exclude both the link and target paths
+exclude = [
+  "effect/**",
+  "**/effect/packages/**",
+  "node_modules/**"
+]

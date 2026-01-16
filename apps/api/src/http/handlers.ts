@@ -23,6 +23,18 @@ export class AudioUploadFailed extends Schema.TaggedError<AudioUploadFailed>()(
   { reason: Schema.String }
 ) {}
 
+// Audio validation constants
+const MAX_AUDIO_SIZE = 10 * 1024 * 1024; // 10MB - conservative limit
+const MIN_AUDIO_SIZE = 100; // Reject trivially small files
+const ALLOWED_AUDIO_TYPES = new Set([
+  "audio/wav",
+  "audio/webm",
+  "audio/ogg",
+  "audio/mp3",
+  "audio/mpeg",
+  "application/octet-stream" // Allow binary fallback
+]);
+
 export const validateTurnSubmission = (input: unknown) =>
   Effect.try({
     try: () => decodeHttpTurnSubmission(input),
@@ -32,7 +44,7 @@ export const validateTurnSubmission = (input: unknown) =>
       })
   });
 
-export const createRoom = Effect.fn(function* (input: {
+export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
   topic: string;
   level: string;
   mode: string;
@@ -132,7 +144,22 @@ export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (
   const db = yield* Db;
   const roomDo = yield* RoomDoClient;
 
-  // 1. Verify turn exists and belongs to the room
+  // 1. Validate audio size and content-type
+  if (input.audio.byteLength > MAX_AUDIO_SIZE) {
+    return yield* new AudioUploadFailed({
+      reason: `audio_too_large: ${input.audio.byteLength} bytes exceeds ${MAX_AUDIO_SIZE} byte limit`
+    });
+  }
+  if (input.audio.byteLength < MIN_AUDIO_SIZE) {
+    return yield* new AudioUploadFailed({ reason: "audio_too_small" });
+  }
+  if (input.contentType && !ALLOWED_AUDIO_TYPES.has(input.contentType)) {
+    return yield* new AudioUploadFailed({
+      reason: `invalid_content_type: ${input.contentType}`
+    });
+  }
+
+  // 2. Verify turn exists and belongs to the room
   const turn = yield* db.getTurnSubmission(input.turnId).pipe(
     Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
   );
@@ -143,7 +170,7 @@ export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (
   const audioKey = `turns/${input.turnId}`;
   const contentType = input.contentType ?? "audio/wav";
 
-  // 2. Per-turn idempotency guard (only one audio per turn)
+  // 3. Per-turn idempotency guard (only one audio per turn)
   const existingTurnUpload = yield* db.getAudioUploadByTurnId(input.turnId).pipe(
     Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
   );
@@ -169,13 +196,13 @@ export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (
     return { audioKey: existingTurnUpload.audioKey, status: "already_uploaded" as const };
   }
 
-  // 3. Per-request idempotency check (same requestId = same request retry)
+  // 4. Per-request idempotency check (same requestId = same request retry)
   const existingRequest = yield* db.getAudioUploadByRequestId(input.turnId, input.requestId).pipe(
     Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
   );
 
   if (!existingRequest) {
-    // 4. Upload to R2 (first upload for this turn)
+    // 5. Upload to R2 (first upload for this turn)
     yield* Effect.tryPromise({
       try: () =>
         bucket.put(audioKey, input.audio, {
@@ -184,7 +211,7 @@ export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (
       catch: (cause) => new AudioUploadFailed({ reason: String(cause) })
     });
 
-    // 5. Record upload for idempotency
+    // 6. Record upload for idempotency
     yield* db.recordAudioUpload({
       turnId: input.turnId,
       requestId: input.requestId,
@@ -203,11 +230,11 @@ export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (
       Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
     );
 
-    // 6. Update turn with audio key (legacy field)
+    // 7. Update turn with audio key (legacy field)
     yield* db.updateTurnAudioKey({ turnId: input.turnId, audioKey });
   }
 
-  // 7. Emit AudioUploaded event to DO (always, even on retry for atomicity)
+  // 8. Emit AudioUploaded event to DO (always, even on retry for atomicity)
   // DO event handler will check its own idempotency and enqueue scoring
   yield* roomDo.emitRoomEvent(
     input.roomId,

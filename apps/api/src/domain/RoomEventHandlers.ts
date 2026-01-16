@@ -600,7 +600,7 @@ export const RoomStatePersistenceLive = Layer.effect(
 /**
  * Helper to load current state or create initial state
  */
-const loadOrCreateState = Effect.fn(function* (roomId: string, timestamp: number) {
+const loadOrCreateState = Effect.fn("RoomEventHandlers.loadOrCreateState")(function* (roomId: string, timestamp: number) {
   const persistence = yield* RoomStatePersistence;
   const existing = yield* persistence.getState(roomId);
   if (existing) return existing;
@@ -631,7 +631,7 @@ export const RoomEventHandlersLive = EventLog.group(
   RoomEventGroup,
   (handlers) =>
     handlers
-      .handle("TurnAccepted", Effect.fn(function* ({ payload, entry }) {
+      .handle("TurnAccepted", Effect.fn("RoomEventHandlers.TurnAccepted")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -649,7 +649,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("ScoreUpdated", Effect.fn(function* ({ payload, entry }) {
+      .handle("ScoreUpdated", Effect.fn("RoomEventHandlers.ScoreUpdated")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, Date.now());
 
@@ -663,7 +663,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("NpcTurnGenerated", Effect.fn(function* ({ payload, entry }) {
+      .handle("NpcTurnGenerated", Effect.fn("RoomEventHandlers.NpcTurnGenerated")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -681,7 +681,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("TurnAdvanced", Effect.fn(function* ({ payload, entry }) {
+      .handle("TurnAdvanced", Effect.fn("RoomEventHandlers.TurnAdvanced")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const idempotency = yield* StepAdvanceIdempotency;
 
@@ -724,7 +724,7 @@ export const RoomEventHandlersLive = EventLog.group(
         yield* idempotency.recordAdvance(payload.roomId, payload.fromStepIndex, payload.toStepIndex);
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("PlayerJoined", Effect.fn(function* ({ payload, entry }) {
+      .handle("PlayerJoined", Effect.fn("RoomEventHandlers.PlayerJoined")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -748,7 +748,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("PlayerDisconnected", Effect.fn(function* ({ payload, entry }) {
+      .handle("PlayerDisconnected", Effect.fn("RoomEventHandlers.PlayerDisconnected")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -771,7 +771,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("RoomCompleted", Effect.fn(function* ({ payload, entry }) {
+      .handle("RoomCompleted", Effect.fn("RoomEventHandlers.RoomCompleted")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -784,7 +784,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("RoomError", Effect.fn(function* ({ payload, entry }) {
+      .handle("RoomError", Effect.fn("RoomEventHandlers.RoomError")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
 
@@ -798,7 +798,7 @@ export const RoomEventHandlersLive = EventLog.group(
 
         yield* persistence.upsertState(payload.roomId, newState);
       }))
-      .handle("AudioUploaded", Effect.fn(function* ({ payload, entry }) {
+      .handle("AudioUploaded", Effect.fn("RoomEventHandlers.AudioUploaded")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const idempotency = yield* AudioScoringIdempotency;
         const queue = yield* TurnQueue;

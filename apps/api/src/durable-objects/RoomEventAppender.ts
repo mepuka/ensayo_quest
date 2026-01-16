@@ -7,7 +7,7 @@ import * as SqlClient from "@effect/sql/SqlClient";
 import * as Redacted from "effect/Redacted";
 import { encodeRoomEventMsgPack, type RoomEvent } from "../domain/RoomProtocol";
 
-export const makeRoomIdentity = Effect.fn(function* (roomId: string) {
+export const makeRoomIdentity = Effect.fn("RoomEventAppender.makeRoomIdentity")(function* (roomId: string) {
   const encryption = yield* EventLogEncryption;
   const key = yield* encryption.sha256(new TextEncoder().encode(roomId));
   return Identity.of({
@@ -16,7 +16,7 @@ export const makeRoomIdentity = Effect.fn(function* (roomId: string) {
   });
 });
 
-export const appendRoomEvent = Effect.fn(function* (roomId: string, event: RoomEvent) {
+export const appendRoomEvent = Effect.fn("RoomEventAppender.appendRoomEvent")(function* (roomId: string, event: RoomEvent) {
     const storage = yield* EventLogServer.Storage;
     const encryption = yield* EventLogEncryption;
     const identity = yield* makeRoomIdentity(roomId);
@@ -39,7 +39,7 @@ export const appendRoomEvent = Effect.fn(function* (roomId: string, event: RoomE
     yield* storage.write(identity.publicKey, persisted);
   });
 
-export const appendRoomEventWithState = Effect.fn(function* (
+export const appendRoomEventWithState = Effect.fn("RoomEventAppender.appendRoomEventWithState")(function* (
   roomId: string,
   event: RoomEvent,
   stateJson?: string
