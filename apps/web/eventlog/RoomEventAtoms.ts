@@ -4,9 +4,9 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type { RoomEvent } from "../../shared/src/RoomProtocol";
 import {
-  getRoomStreamUrl,
-  makeRoomEventStream,
-  makeRoomEventStreamWithStatus,
+  getRoomEventStream,
+  getRoomConnectionStatus,
+  clearRoomConnection,
   initialConnectionState,
   type ConnectionState,
   type ConnectionStatus
@@ -21,7 +21,7 @@ import {
 
 // Re-export connection types for convenience
 export type { ConnectionState, ConnectionStatus } from "./EventLogClient";
-export { initialConnectionState } from "./EventLogClient";
+export { initialConnectionState, clearRoomConnection } from "./EventLogClient";
 
 // =============================================================================
 // Room ID Atom
@@ -30,24 +30,22 @@ export { initialConnectionState } from "./EventLogClient";
 export const roomIdAtom = Atom.searchParam("roomId", { schema: Schema.String });
 
 // =============================================================================
-// Event Stream
+// Event Stream (Shared Connection)
 // =============================================================================
-
-const roomEventStreamForId = (roomId: string) =>
-  makeRoomEventStream({ roomId, url: getRoomStreamUrl(roomId) }).pipe(
-    Stream.tap((event) => Effect.sync(() => console.info("RoomEvent", event)))
-  );
 
 /**
  * Raw room event stream atom.
  * Emits individual RoomEvent objects as they arrive.
+ *
+ * Uses shared connection via getRoomEventStream - all atoms consuming
+ * events for the same roomId share a single WebSocket connection.
  */
 export const roomEventsAtom = Atom.make((get) => {
   const roomId = get(roomIdAtom);
   if (Option.isNone(roomId) || roomId.value.trim() === "") {
     return Stream.empty;
   }
-  return roomEventStreamForId(roomId.value);
+  return getRoomEventStream(roomId.value);
 });
 
 // =============================================================================
@@ -75,28 +73,19 @@ export const roomStateStreamFromEvents = (
  * - Turn progress and history
  * - Current turn scoring
  * - Error and completion states
+ *
+ * Uses shared connection - shares WebSocket with roomEventsAtom and others.
  */
 export const roomStateAtom = Atom.make((get) => {
   const roomId = get(roomIdAtom);
   if (Option.isNone(roomId) || roomId.value.trim() === "") {
     return Stream.make(initialRoomState);
   }
-  return roomStateStreamFromEvents(roomEventStreamForId(roomId.value), initialRoomState);
+  return roomStateStreamFromEvents(getRoomEventStream(roomId.value), initialRoomState);
 });
 
 // =============================================================================
-// Derived Streams (helpers for creating derived state streams)
-// =============================================================================
-
-/**
- * Create a derived stream that maps room state to a specific field.
- * Each derived atom creates its own stream to avoid atom composition issues.
- */
-const makeRoomStateStream = (roomId: string) =>
-  roomStateStreamFromEvents(roomEventStreamForId(roomId), initialRoomState);
-
-// =============================================================================
-// Connection Status Atom
+// Connection Status Atom (Shared Connection)
 // =============================================================================
 
 /**
@@ -108,45 +97,27 @@ const makeRoomStateStream = (roomId: string) =>
  * - reconnecting: Connection lost, EventLogRemote is retrying
  * - disconnected: Connection failed
  *
- * EventLogRemote handles reconnection internally with exponential backoff
- * (100ms to 5s max). This atom surfaces that status to the UI.
+ * Uses shared connection - the same SubscriptionRef that the WebSocket
+ * wrapper updates. No additional WebSocket connection created.
  */
 export const connectionStatusAtom = Atom.make((get) => {
   const roomId = get(roomIdAtom);
   if (Option.isNone(roomId) || roomId.value.trim() === "") {
     return Stream.make(initialConnectionState);
   }
-
-  // Use the stream with status tracking
-  return Stream.unwrapScoped(
-    Effect.map(
-      makeRoomEventStreamWithStatus({
-        roomId: roomId.value,
-        url: getRoomStreamUrl(roomId.value)
-      }),
-      ({ connectionStatus }) => connectionStatus
-    )
-  );
+  return getRoomConnectionStatus(roomId.value);
 });
 
 /**
  * Simple connection status string atom for easy UI binding.
+ * Uses shared connection - derives from the same status ref.
  */
 export const connectionStatusSimpleAtom = Atom.make((get) => {
   const roomId = get(roomIdAtom);
   if (Option.isNone(roomId) || roomId.value.trim() === "") {
     return Stream.succeed<ConnectionStatus>("disconnected");
   }
-
-  return Stream.unwrapScoped(
-    Effect.map(
-      makeRoomEventStreamWithStatus({
-        roomId: roomId.value,
-        url: getRoomStreamUrl(roomId.value)
-      }),
-      ({ connectionStatus }) => Stream.map(connectionStatus, (state) => state.status)
-    )
-  );
+  return Stream.map(getRoomConnectionStatus(roomId.value), (state) => state.status);
 });
 
 // =============================================================================
@@ -168,11 +139,16 @@ export const scorePanelStreamFromEvents = (
 /**
  * @deprecated Use roomStateAtom instead.
  * Kept for backward compatibility with existing components.
+ * Uses shared connection - shares WebSocket with other atoms.
  */
 export const scorePanelAtom = Atom.make((get) => {
   const roomId = get(roomIdAtom);
   if (Option.isNone(roomId) || roomId.value.trim() === "") {
     return Stream.make(deriveScorePanelState(initialRoomState));
   }
-  return Stream.map(makeRoomStateStream(roomId.value), deriveScorePanelState);
+  const roomStateStream = roomStateStreamFromEvents(
+    getRoomEventStream(roomId.value),
+    initialRoomState
+  );
+  return Stream.map(roomStateStream, deriveScorePanelState);
 });

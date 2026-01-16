@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, beforeEach } from "bun:test";
 import { Effect, Layer, Stream, Chunk } from "effect";
 import * as Redacted from "effect/Redacted";
 import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
@@ -8,7 +8,9 @@ import {
   buildRoomStreamUrl,
   decodeRoomEventEntry,
   makeRoomIdentity,
-  roomEventStreamFromEntries
+  roomEventStreamFromEntries,
+  getOrCreateRoomConnection,
+  clearAllRoomConnections
 } from "../eventlog/EventLogClient";
 
 // Server payload format (matches what the server writes to journal)
@@ -104,5 +106,43 @@ describe("roomEventStreamFromEntries", () => {
     const result = await Effect.runPromise(Stream.runCollect(stream));
 
     expect(Chunk.toReadonlyArray(result)).toEqual([expectedScoreEvent]);
+  });
+});
+
+describe("getOrCreateRoomConnection", () => {
+  beforeEach(() => {
+    clearAllRoomConnections();
+    // Mock window.location for tests
+    (globalThis as any).window = {
+      location: { href: "http://localhost:8787/app" }
+    };
+  });
+
+  it("returns the same connection for the same roomId", () => {
+    const conn1 = getOrCreateRoomConnection("test-room");
+    const conn2 = getOrCreateRoomConnection("test-room");
+
+    // Same reference means same connection (no duplicate WebSocket)
+    expect(conn1).toBe(conn2);
+    expect(conn1.statusRef).toBe(conn2.statusRef);
+    expect(conn1.layer).toBe(conn2.layer);
+  });
+
+  it("returns different connections for different roomIds", () => {
+    const conn1 = getOrCreateRoomConnection("room-a");
+    const conn2 = getOrCreateRoomConnection("room-b");
+
+    expect(conn1).not.toBe(conn2);
+    expect(conn1.roomId).toBe("room-a");
+    expect(conn2.roomId).toBe("room-b");
+  });
+
+  it("creates new connection after cache is cleared", () => {
+    const conn1 = getOrCreateRoomConnection("test-room");
+    clearAllRoomConnections();
+    const conn2 = getOrCreateRoomConnection("test-room");
+
+    // New connection created
+    expect(conn1).not.toBe(conn2);
   });
 });

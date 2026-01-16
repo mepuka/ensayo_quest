@@ -238,3 +238,91 @@ export const makeRoomEventStreamWithStatus = (options: {
 
     return { events, connectionStatus };
   });
+
+// =============================================================================
+// Shared Room Connection Manager
+// =============================================================================
+
+/**
+ * Cached room connection with shared resources.
+ * Ensures only one WebSocket connection per room across all consumers.
+ */
+export type RoomConnection = {
+  readonly roomId: string;
+  readonly statusRef: SubscriptionRef.SubscriptionRef<ConnectionState>;
+  readonly layer: Layer.Layer<EventJournal.EventJournal>;
+};
+
+// Module-level cache for room connections
+const roomConnections = new Map<string, RoomConnection>();
+
+/**
+ * Get or create a shared room connection.
+ *
+ * This is the key optimization: instead of each atom creating its own
+ * WebSocket connection, they all share the same connection via this cache.
+ *
+ * The SubscriptionRef is created synchronously (it's just an in-memory ref),
+ * and the Layer lazily initializes the actual WebSocket when the
+ * first stream consumer starts.
+ */
+export const getOrCreateRoomConnection = (roomId: string): RoomConnection => {
+  const existing = roomConnections.get(roomId);
+  if (existing) {
+    return existing;
+  }
+
+  // Create status ref synchronously (it's just an in-memory ref)
+  const statusRef = Effect.runSync(SubscriptionRef.make(initialConnectionState));
+  const url = getRoomStreamUrl(roomId);
+  const layer = makeTrackedRoomEventLayer(roomId, url, statusRef);
+
+  const connection: RoomConnection = { roomId, statusRef, layer };
+  roomConnections.set(roomId, connection);
+
+  return connection;
+};
+
+/**
+ * Get the event stream from a shared connection.
+ * All consumers of the same roomId share the same WebSocket.
+ */
+export const getRoomEventStream = (roomId: string): Stream.Stream<RoomEvent> => {
+  const connection = getOrCreateRoomConnection(roomId);
+  return Stream.unwrapScoped(
+    Effect.gen(function* () {
+      const journal = yield* EventJournal.EventJournal;
+      const changes = yield* journal.changes;
+      return roomEventStreamFromEntries(Stream.fromQueue(changes));
+    })
+  ).pipe(
+    Stream.tap((event) => Effect.sync(() => console.info("RoomEvent", event))),
+    Stream.provideLayer(connection.layer)
+  );
+};
+
+/**
+ * Get the connection status stream from a shared connection.
+ * Uses the same SubscriptionRef that the WebSocket wrapper updates.
+ */
+export const getRoomConnectionStatus = (roomId: string): Stream.Stream<ConnectionState> => {
+  const connection = getOrCreateRoomConnection(roomId);
+  return connection.statusRef.changes;
+};
+
+/**
+ * Clear a room connection from the cache.
+ * The actual WebSocket cleanup happens when the stream consumers end.
+ * Call this when navigating away from a room.
+ */
+export const clearRoomConnection = (roomId: string): void => {
+  roomConnections.delete(roomId);
+};
+
+/**
+ * Clear all room connections from the cache.
+ * Useful for cleanup during testing.
+ */
+export const clearAllRoomConnections = (): void => {
+  roomConnections.clear();
+};
