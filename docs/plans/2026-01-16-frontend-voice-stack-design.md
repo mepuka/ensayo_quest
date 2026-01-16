@@ -12,8 +12,9 @@ This document compiles research findings from six parallel investigations into m
 
 1. **Client-side ASR**: Whisper via Transformers.js (current approach, validated)
 2. **Frontend Framework**: TanStack Start for type-safe routing and server functions
-3. **Voice Activity Detection**: @ricky0123/vad-web for smarter recording triggers
-4. **Audio Upload**: Keep current hybrid pattern (client transcribe + optional R2 backup)
+3. **Voice Activity Detection**: Effect-native wrapper around @ricky0123/vad-web
+4. **Audio Upload**: Required - R2 storage enables advanced scoring via audio understanding models (Gemini)
+5. **Effect Integration**: Custom Effect wrappers for VAD and Transformers.js APIs
 
 ---
 
@@ -163,7 +164,19 @@ useEffect(() => {
 
 ## 5. Audio Upload Architecture
 
-### Current Flow (Validated)
+### Why Audio Upload is Required
+
+Audio storage in R2 is **required** (not optional) for the scoring pipeline:
+
+1. **Audio Understanding Models**: Gemini and similar models can analyze audio directly for pronunciation, fluency, and naturalness - features that text-only scoring cannot provide
+2. **Cost-Effective**: Gemini audio analysis is relatively cheap compared to re-transcription
+3. **Future-Proof**: Audio corpus enables model fine-tuning, pronunciation features, and QA
+
+**Important**: Gemini audio analysis is for **additional scoring** in the backend pipeline, NOT for replacing client-side transcription. The flow is:
+- Client: Local Whisper transcription (fast feedback)
+- Server: Scoring pipeline fetches audio from R2 and runs Gemini analysis for advanced features (pronunciation, fluency assessment)
+
+### Current Flow
 
 ```
 Browser                           API
@@ -172,7 +185,11 @@ Browser                           API
 2. Whisper transcription (local)
 3. POST /api/rooms/:roomId/turns  →  Insert turn, enqueue scoring
 4. Receive turnId                 ←
-5. POST /api/turns/:turnId/audio  →  Store in R2
+5. POST /api/turns/:turnId/audio  →  Store in R2 (REQUIRED)
+                                      ↓
+                              Queue Consumer fetches audio
+                                      ↓
+                              Gemini audio analysis (future)
 ```
 
 ### Cost Analysis
@@ -181,20 +198,23 @@ Browser                           API
 |-----------|-----------|---------------------------|
 | R2 Storage | 10GB/mo | ~$113/mo (30-day retention) |
 | R2 PUT ops | 1M/mo | ~$63/mo |
+| Gemini Audio | - | TBD (much cheaper than Whisper) |
 | Workers AI Whisper | - | **~$33K/day** (not recommended) |
 
 ### Recommendation
 
-**Keep hybrid approach**:
-- Client transcription for immediate feedback
-- Optional audio upload for: QA sampling, pronunciation features, model improvement
-- **Do not** re-transcribe every turn server-side (cost prohibitive)
+**Hybrid approach with required upload**:
+- Client transcription for immediate feedback (low latency UX)
+- Audio always uploaded to R2 for scoring pipeline
+- Scoring pipeline uses audio understanding models (Gemini) for advanced features
+- **Do not** re-transcribe server-side (use Gemini for audio analysis instead)
 
 ### Future Enhancements
 
 1. Add R2 lifecycle rules for auto-delete after 30 days
 2. Consider presigned URLs for direct-to-R2 upload at scale
 3. Compress to Opus (10x smaller) when ready
+4. Gemini audio analysis in TurnScoringConsumer
 
 ---
 
@@ -257,7 +277,7 @@ Browser                           API
 │  ┌────────────────────────────────────────────────────────────────┐│
 │  │ Turn Submission                                                 ││
 │  │ 1. POST /api/rooms/:roomId/turns (transcript)                  ││
-│  │ 2. [Opt-in] POST /api/turns/:turnId/audio (WAV)                ││
+│  │ 2. POST /api/turns/:turnId/audio (WAV) - REQUIRED              ││
 │  └────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────┘
                                    │
@@ -270,10 +290,70 @@ Browser                           API
 │                                      ▼                              │
 │                            ┌─────────────────┐                      │
 │                            │ R2 Audio Bucket │                      │
-│                            │ (optional store)│                      │
+│                            │ (required)      │                      │
+│                            └────────┬────────┘                      │
+│                                     │                               │
+│                                     ▼                               │
+│                            ┌─────────────────┐                      │
+│                            │ Gemini Audio    │                      │
+│                            │ Analysis (TODO) │                      │
 │                            └─────────────────┘                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 7. Effect Wrappers Required
+
+### VAD Service (Effect-native wrapper for @ricky0123/vad-web)
+
+Need to design an Effect service that wraps @ricky0123/vad-web with:
+
+```typescript
+// Proposed API
+export class VadService extends Context.Tag("VadService")<
+  VadService,
+  {
+    readonly start: Effect.Effect<void, VadInitFailed>;
+    readonly stop: Effect.Effect<void>;
+    readonly speechEvents: Stream.Stream<VadEvent>;
+  }
+>() {}
+
+export type VadEvent =
+  | { type: "speech_start" }
+  | { type: "speech_end"; audio: Float32Array };
+
+// Implementation would wrap MicVAD callbacks into Effect streams
+```
+
+Key considerations:
+- VAD library uses callback-based API - need to bridge to Effect streams
+- Must handle cleanup properly (stop VAD when stream ends)
+- Consider using `Stream.async` or `Queue` for callback bridging
+
+### Transformers.js Service (Effect wrapper for @huggingface/transformers)
+
+Need Effect service wrapping the Transformers.js pipeline:
+
+```typescript
+export class TranscriptionService extends Context.Tag("TranscriptionService")<
+  TranscriptionService,
+  {
+    readonly loadModel: (modelId: string) => Effect.Effect<void, ModelLoadFailed>;
+    readonly transcribe: (audio: Float32Array, options: TranscribeOptions) =>
+      Effect.Effect<TranscriptionResult, TranscriptionFailed>;
+    readonly isModelLoaded: Effect.Effect<boolean>;
+    readonly modelLoadProgress: Stream.Stream<LoadProgress>;
+  }
+>() {}
+```
+
+Key considerations:
+- Model loading is async and can fail - needs proper error handling
+- Progress reporting during model download
+- Model caching/persistence across sessions (see Open Questions)
+- Worker isolation (current pattern should be preserved)
 
 ---
 
@@ -281,10 +361,12 @@ Browser                           API
 
 ### Phase 1: Immediate (Current Sprint)
 
-1. **Update Transformers.js** to `@huggingface/transformers` v3
-2. **Add VAD integration** with `@ricky0123/vad-web`
-3. **Fix AudioWorklet buffer copying** (use transferable objects)
-4. **Add model preloading** for better UX
+1. **Install packages** - `@huggingface/transformers` v3, `@ricky0123/vad-web`
+2. **Explore APIs** - Understand actual APIs for Effect wrapper design
+3. **Research model caching** - Investigate how Transformers.js handles caching
+4. **Design Effect wrappers** - VadService and TranscriptionService interfaces
+5. **Fix AudioWorklet buffer copying** (use transferable objects)
+6. **Add model preloading** for better UX
 
 ### Phase 2: Short-Term
 
@@ -313,6 +395,95 @@ Browser                           API
   }
 }
 ```
+
+---
+
+## 8. Model Caching Research Findings
+
+### How Transformers.js Caches Models
+
+**Primary mechanism**: Cache API (`caches.open('transformers-cache')`)
+- Models downloaded from Hugging Face Hub are automatically cached
+- Subsequent loads are instant from cache
+- Works offline once cached
+
+### Configuration Options
+
+```typescript
+import { env } from '@huggingface/transformers';
+
+env.useBrowserCache = true;       // Enable Cache API (default: true)
+env.allowRemoteModels = true;     // Allow HF Hub downloads (default: true)
+env.localModelPath = '/models/';  // Self-host models path
+env.allowLocalModels = false;     // Try local before remote
+```
+
+### Progress Tracking
+
+```typescript
+const pipe = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
+  progress_callback: (info) => {
+    if (info.status === 'progress') {
+      console.log(`${info.file}: ${info.progress}% (${info.loaded}/${info.total})`);
+    }
+  }
+});
+```
+
+### Cache Management Utilities
+
+```typescript
+// Check if model is cached
+async function isModelCached(modelId: string): Promise<boolean> {
+  const cache = await caches.open('transformers-cache');
+  const keys = await cache.keys();
+  return keys.some(req => req.url.includes(encodeURIComponent(modelId)));
+}
+
+// Get storage info
+async function getStorageInfo() {
+  const { usage, quota } = await navigator.storage.estimate();
+  return {
+    usedMB: Math.round(usage / (1024 * 1024)),
+    quotaMB: Math.round(quota / (1024 * 1024)),
+    availableMB: Math.round((quota - usage) / (1024 * 1024))
+  };
+}
+
+// Request persistent storage (prevents eviction)
+async function requestPersistence(): Promise<boolean> {
+  if (navigator.storage?.persist) {
+    return await navigator.storage.persist();
+  }
+  return false;
+}
+
+// Clear cache
+async function clearModelCache(): Promise<boolean> {
+  return await caches.delete('transformers-cache');
+}
+```
+
+### Browser Storage Quotas
+
+| Browser | Quota | Notes |
+|---------|-------|-------|
+| Chrome/Edge | 60% of disk | Most generous |
+| Firefox | 10% of disk or 10GB | Group limit |
+| Safari Desktop | 60% of disk | **7-day eviction without interaction** |
+| Safari iOS | ~50MB-1GB | Most restrictive |
+
+### Safari 7-Day Eviction Workaround
+
+Safari evicts Cache API storage after 7 days without user interaction. Mitigations:
+1. **PWA installation** - Home screen apps exempt from eviction
+2. **Request persistent storage** - `navigator.storage.persist()`
+3. **Re-validate on load** - Check cache, re-download if needed
+
+### Offline Behavior
+
+- **Cached**: Works fully offline
+- **Not cached + offline**: Fails with network error - must handle gracefully
 
 ---
 
