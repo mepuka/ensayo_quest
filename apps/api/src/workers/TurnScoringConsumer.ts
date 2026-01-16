@@ -6,9 +6,20 @@ import { RoomDoClient } from "../services/RoomDoClient";
 import { ScoringService } from "../services/ScoringService";
 import { ScoreUpdated, TurnEvaluation } from "../domain/RoomProtocol";
 
-export class TurnScoringError extends Schema.TaggedError<TurnScoringError>()("TurnScoringError", {
-  reason: Schema.String
-}) {}
+// Retryable error: transient failures that should be retried (network, DB timeouts)
+export class TurnScoringRetryableError extends Schema.TaggedError<TurnScoringRetryableError>()(
+  "TurnScoringRetryableError",
+  { reason: Schema.String }
+) {}
+
+// Non-retryable error: permanent failures (validation, schema errors, missing data)
+export class TurnScoringNonRetryableError extends Schema.TaggedError<TurnScoringNonRetryableError>()(
+  "TurnScoringNonRetryableError",
+  { reason: Schema.String }
+) {}
+
+// Union type for all scoring errors
+export type TurnScoringError = TurnScoringRetryableError | TurnScoringNonRetryableError;
 
 export interface TurnScoringConsumerService {
   handle: (payload: unknown) => Effect.Effect<void, TurnScoringError, never>;
@@ -24,40 +35,58 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
   const roomDo = yield* RoomDoClient;
   const scoring = yield* ScoringService;
   const handle = Effect.fn(function* (payload: unknown) {
+      // Decode errors are non-retryable - invalid payload won't become valid
       const job = yield* Effect.try({
         try: () => decodeQueueJob(payload),
-        catch: (cause) => new TurnScoringError({ reason: String(cause) })
+        catch: (cause) => new TurnScoringNonRetryableError({ reason: `Invalid payload: ${cause}` })
       });
+      // Not found errors are non-retryable - data won't appear on retry
       const submission = yield* db.getTurnSubmission(job.turnId).pipe(
-        Effect.mapError((cause) => new TurnScoringError({ reason: String(cause) }))
+        Effect.mapError((cause) => {
+          const reason = String(cause);
+          if (reason.includes("not_found")) {
+            return new TurnScoringNonRetryableError({ reason });
+          }
+          return new TurnScoringRetryableError({ reason });
+        })
       );
       const template = yield* db.getScenarioTemplate(submission.templateId).pipe(
-        Effect.mapError((cause) => new TurnScoringError({ reason: String(cause) }))
+        Effect.mapError((cause) => {
+          const reason = String(cause);
+          if (reason.includes("not_found")) {
+            return new TurnScoringNonRetryableError({ reason });
+          }
+          return new TurnScoringRetryableError({ reason });
+        })
       );
       const targetVocab = template.roleRubrics[0]?.targetVocab ?? [];
+      // Scoring service errors are typically retryable (external API issues)
       const evaluation = yield* scoring.evaluate({
         turnId: submission.turnId,
         transcript: submission.transcript,
         audioStats: submission.audioStats,
         targetVocab
       }).pipe(
-        Effect.mapError((cause) => new TurnScoringError({ reason: String(cause) }))
+        Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
+      // Schema encoding errors are non-retryable - bad data structure
       const detailJson = yield* Effect.try({
         try: () => Schema.encodeSync(Schema.parseJson(TurnEvaluation))(evaluation),
-        catch: (cause) => new TurnScoringError({ reason: String(cause) })
+        catch: (cause) => new TurnScoringNonRetryableError({ reason: `Encoding error: ${cause}` })
       });
+      // DB write errors are retryable
       yield* db.updateTurnScore({
         turnId: job.turnId,
         overall: evaluation.overallScore,
         detailJson
       }).pipe(
         Effect.mapError((cause) =>
-          new TurnScoringError({
+          new TurnScoringRetryableError({
             reason: cause instanceof Error ? cause.message : String(cause)
           })
         )
       );
+      // DO event emission errors are retryable
       yield* roomDo.emitRoomEvent(
         job.roomId,
         new ScoreUpdated({
@@ -65,6 +94,8 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
           turnId: job.turnId,
           evaluation
         })
+      ).pipe(
+        Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
     });
 

@@ -13,10 +13,14 @@ import { RoomIdGeneratorLive } from "./services/RoomIdGenerator";
 import { TurnstileLive } from "./security/Turnstile";
 import { ScoringConfigLive, ScoringServiceLive } from "./services/ScoringService";
 import { AudioBucketLive } from "./services/CloudflareLayers";
+import { LanguageReviewGoogleLive } from "./services/LanguageReviewGoogle";
 import { makeTurnScoringConsumer } from "./workers/TurnScoringConsumer";
+import { Db } from "./services/Db";
 import { RoomDurableObject } from "./durable-objects/RoomDurableObject";
 import { toHttpErrorResponse } from "./http/errorResponse";
+import { routes, matchRoute } from "./http/routes";
 
+// Response schemas
 const SubmitTurnResponse = Schema.Struct({
   turnId: Schema.String,
   status: Schema.String
@@ -26,6 +30,45 @@ class RequestReadError extends Schema.TaggedError<RequestReadError>()("RequestRe
   reason: Schema.String
 }) {}
 
+// ============================================================================
+// CORS Configuration - centralized for easy modification
+// ============================================================================
+const corsConfig = {
+  allowedOrigins: "*",
+  allowedMethods: "GET, POST, PUT, DELETE, OPTIONS",
+  allowedHeaders: "Content-Type, Authorization",
+  maxAge: "86400"
+} as const;
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": corsConfig.allowedOrigins,
+  "Access-Control-Allow-Methods": corsConfig.allowedMethods,
+  "Access-Control-Allow-Headers": corsConfig.allowedHeaders,
+  "Access-Control-Max-Age": corsConfig.maxAge
+};
+
+// Apply CORS headers to any response - single point of CORS application
+const withCors = (response: Response): Response => {
+  const headers = new Headers(response.headers);
+  Object.entries(corsHeaders).forEach(([key, value]) => headers.set(key, value));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+};
+
+// Handle CORS preflight - returns early if this is an OPTIONS request
+const handleCorsPreflight = (method: string): Response | null => {
+  if (method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  return null;
+};
+
+// ============================================================================
+// Application Layer
+// ============================================================================
 const makeAppLayer = (env: CloudflareEnv) => {
   const envLayer = Layer.succeed(Env, env);
   const baseLayer = Layer.mergeAll(
@@ -34,12 +77,16 @@ const makeAppLayer = (env: CloudflareEnv) => {
     RoomDoClientLive,
     RoomIdGeneratorLive,
     TurnstileLive,
-    AudioBucketLive
+    AudioBucketLive,
+    LanguageReviewGoogleLive
   ).pipe(Layer.provideMerge(envLayer));
   const scoringLayer = ScoringServiceLive.pipe(Layer.provideMerge(ScoringConfigLive));
   return Layer.mergeAll(baseLayer, scoringLayer);
 };
 
+// ============================================================================
+// Request Helpers
+// ============================================================================
 const decodeBody = <A, I>(schema: Schema.Schema<A, I>, request: Request) =>
   Effect.tryPromise({
     try: () => request.text(),
@@ -60,8 +107,6 @@ const jsonResponse = <A, I>(schema: Schema.Schema<A, I>, value: A, status = 200)
     headers: { "Content-Type": "application/json" }
   });
 
-const errorResponse = (error: unknown) => toHttpErrorResponse(error);
-
 const wsUrlForRoom = (request: Request, roomId: string) => {
   const url = new URL(request.url);
   const protocol = url.protocol === "https:" ? "wss:" : "ws:";
@@ -77,6 +122,9 @@ const getRoomStub = (env: CloudflareEnv, roomId: string) => {
   return namespace.get(id);
 };
 
+// ============================================================================
+// Exports
+// ============================================================================
 export { RoomDurableObject };
 
 export default {
@@ -84,61 +132,53 @@ export default {
     const url = new URL(request.url);
     const segments = url.pathname.split("/").filter(Boolean);
     const method = request.method.toUpperCase();
+
+    // Handle CORS preflight - early return
+    const preflightResponse = handleCorsPreflight(method);
+    if (preflightResponse) return preflightResponse;
+
     const appLayer = makeAppLayer(env);
+
     const program = Effect.gen(function* () {
-      if (method === "POST" && segments.length === 2 && segments[0] === "api" && segments[1] === "rooms") {
+      // Route: POST /api/rooms
+      const createRoomParams = matchRoute(method, segments, routes.createRoom);
+      if (createRoomParams) {
         const input = yield* decodeBody(CreateRoomRequest, request);
         const created = yield* handlers.createRoom(input);
-        const response = new CreateRoomResponse({
+        return jsonResponse(CreateRoomResponse, new CreateRoomResponse({
           roomId: created.roomId,
           wsUrl: wsUrlForRoom(request, created.roomId),
           seedPrompt: created.seedPrompt
-        });
-        return jsonResponse(CreateRoomResponse, response, 201);
+        }), 201);
       }
-      if (
-        method === "POST" &&
-        segments.length === 4 &&
-        segments[0] === "api" &&
-        segments[1] === "rooms" &&
-        segments[3] === "turns"
-      ) {
-        const roomId = segments[2] ?? "";
-        if (!roomId) {
-          return new Response("Not Found", { status: 404 });
-        }
+
+      // Route: POST /api/rooms/:roomId/turns
+      const submitTurnParams = matchRoute(method, segments, routes.submitTurn);
+      if (submitTurnParams) {
+        const roomId = submitTurnParams.roomId ?? "";
+        if (!roomId) return new Response("Not Found", { status: 404 });
         const body = yield* decodeUnknownBody(request);
         const result = yield* handlers.submitTurn(roomId, body);
         return jsonResponse(SubmitTurnResponse, result, 202);
       }
-      if (
-        method === "GET" &&
-        segments.length === 4 &&
-        segments[0] === "api" &&
-        segments[1] === "rooms" &&
-        segments[3] === "stream"
-      ) {
-        const roomId = segments[2] ?? "";
-        if (!roomId) {
-          return new Response("Not Found", { status: 404 });
-        }
+
+      // Route: GET /api/rooms/:roomId/stream (WebSocket - delegate to Durable Object)
+      const streamParams = matchRoute(method, segments, routes.streamRoom);
+      if (streamParams) {
+        const roomId = streamParams.roomId ?? "";
+        if (!roomId) return new Response("Not Found", { status: 404 });
         const stub = getRoomStub(env, roomId);
         return yield* Effect.tryPromise({
           try: () => stub.fetch(request),
           catch: (cause) => new RequestReadError({ reason: String(cause) })
         });
       }
-      if (
-        method === "POST" &&
-        segments.length === 4 &&
-        segments[0] === "api" &&
-        segments[1] === "turns" &&
-        segments[3] === "audio"
-      ) {
-        const turnId = segments[2] ?? "";
-        if (!turnId) {
-          return new Response("Not Found", { status: 404 });
-        }
+
+      // Route: POST /api/turns/:turnId/audio
+      const uploadAudioParams = matchRoute(method, segments, routes.uploadAudio);
+      if (uploadAudioParams) {
+        const turnId = uploadAudioParams.turnId ?? "";
+        if (!turnId) return new Response("Not Found", { status: 404 });
         const audio = yield* Effect.tryPromise({
           try: () => request.arrayBuffer(),
           catch: (cause) => new RequestReadError({ reason: String(cause) })
@@ -151,22 +191,63 @@ export default {
         });
         return jsonResponse(TurnAudioResponse, result, 201);
       }
+
+      // No route matched
       return new Response("Not Found", { status: 404 });
     }).pipe(
       Effect.provide(appLayer),
-      Effect.catchAll((error) => Effect.succeed(errorResponse(error)))
+      Effect.catchAll((error) => Effect.succeed(toHttpErrorResponse(error)))
     );
-    return Effect.runPromise(program);
+
+    // Run the effect and apply CORS to the response (single boundary point)
+    const response = await Effect.runPromise(program);
+    return withCors(response);
   },
+
   async queue(batch: MessageBatch, env: CloudflareEnv): Promise<void> {
     const appLayer = makeAppLayer(env);
     const program = Effect.gen(function* () {
+      const db = yield* Db;
       const consumer = yield* makeTurnScoringConsumer;
+
       yield* Effect.forEach(batch.messages, (message) =>
-        consumer.handle(message.body).pipe(
-          Effect.tap(() => Effect.sync(() => message.ack())),
-          Effect.catchAll(() =>
+        Effect.gen(function* () {
+          // Idempotency check: skip if already processed
+          const alreadyProcessed = yield* db.isMessageProcessed(message.id).pipe(
+            Effect.catchAll(() => Effect.succeed(false))
+          );
+          if (alreadyProcessed) {
+            message.ack();
+            return;
+          }
+
+          // Process the message
+          yield* consumer.handle(message.body);
+
+          // Mark as processed before ack (idempotency record)
+          yield* db.markMessageProcessed(message.id).pipe(
+            Effect.catchAll(() => Effect.void)
+          );
+          message.ack();
+        }).pipe(
+          // Retryable errors: retry the message
+          Effect.catchTag("TurnScoringRetryableError", (err) =>
             Effect.sync(() => {
+              console.error(`Retryable error for message ${message.id}: ${err.reason}`);
+              message.retry();
+            })
+          ),
+          // Non-retryable errors: ack to prevent retry (let DLQ handle via max_retries)
+          Effect.catchTag("TurnScoringNonRetryableError", (err) =>
+            Effect.sync(() => {
+              console.error(`Non-retryable error for message ${message.id}: ${err.reason}`);
+              message.ack(); // Don't retry - permanent failure
+            })
+          ),
+          // Unexpected errors: retry to be safe
+          Effect.catchAll((err) =>
+            Effect.sync(() => {
+              console.error(`Unexpected error for message ${message.id}:`, err);
               message.retry();
             })
           )

@@ -37,5 +37,6 @@ export const makeDoSqliteEventLogRuntimeLayer = (
 ) => {
   const sqliteLayer = DoSqliteClient.layerConfig(Config.succeed({ db: storage }));
   const storageLayer = makeEventLogStorageLayer(options).pipe(Layer.provide(sqliteLayer));
-  return Layer.mergeAll(sqliteLayer, storageLayer);
+  // Include encryption layer for functions that directly use EventLogEncryption
+  return Layer.mergeAll(sqliteLayer, storageLayer, EventLogEncryptionLayer);
 };
