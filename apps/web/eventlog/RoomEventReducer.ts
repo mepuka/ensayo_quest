@@ -318,6 +318,9 @@ export const reduceRoomEvent = (state: RoomState, event: RoomEvent): RoomState =
       return handleNpcTurnGenerated(state, event);
     case "TurnAdvanced":
       return handleTurnAdvanced(state, event);
+    case "AudioUploaded":
+      // AudioUploaded is a backend coordination event - no frontend state change
+      return state;
     default: {
       // Exhaustive check - TypeScript will error if we miss a case
       const _exhaustive: never = event;

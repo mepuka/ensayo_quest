@@ -37,6 +37,8 @@ export {
   StepAdvanceIdempotencyLive,
   AlarmIdempotency,
   AlarmIdempotencyLive,
+  AudioScoringIdempotency,
+  AudioScoringIdempotencyLive,
   SessionValidation,
   SessionValidationLive,
   ValidatedSession,
@@ -54,7 +56,7 @@ export {
 } from "./RoomEventHandlers.js";
 
 import { RoomEventGroup } from "./RoomEventGroup.js";
-import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive, SessionValidationLive } from "./RoomEventHandlers.js";
+import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive, AudioScoringIdempotencyLive, SessionValidationLive } from "./RoomEventHandlers.js";
 
 // =============================================================================
 // EventLog Schema
@@ -148,6 +150,8 @@ export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   Layer.provide(StepAdvanceIdempotencyLive),
   // Alarm idempotency for NPC turn generation
   Layer.provide(AlarmIdempotencyLive),
+  // Audio scoring idempotency (Architecture Invariant #9)
+  Layer.provide(AudioScoringIdempotencyLive),
   // Session validation for WebSocket connections (Architecture Invariants #7, #8)
   Layer.provide(SessionValidationLive),
   // EventLog.layer requires EventJournal

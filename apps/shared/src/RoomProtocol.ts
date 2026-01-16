@@ -99,6 +99,23 @@ export class TurnAdvanced extends Schema.Class<TurnAdvanced>("TurnAdvanced")({
   nextParticipantId: Schema.String
 }) {}
 
+/**
+ * AudioUploaded - Emitted when audio for a turn has been uploaded to R2.
+ * This event gates the scoring pipeline - scoring can only begin after audio exists.
+ * @see docs/ARCHITECTURE.md - Invariant #9: Scoring enqueue gated on AudioUploaded
+ */
+export class AudioUploaded extends Schema.Class<AudioUploaded>("AudioUploaded")({
+  type: Schema.Literal("AudioUploaded"),
+  roomId: Schema.String,
+  turnId: Schema.String,
+  audioKey: Schema.String,
+  requestId: Schema.String,
+  contentType: Schema.optional(Schema.String),
+  fileSizeBytes: Schema.Number,
+  durationMs: Schema.optional(Schema.Number),
+  timestamp: Schema.Number
+}) {}
+
 export const RoomEventSchema = Schema.Union(
   RoomSnapshot,
   TurnAccepted,
@@ -108,7 +125,8 @@ export const RoomEventSchema = Schema.Union(
   PlayerJoined,
   PlayerDisconnected,
   NpcTurnGenerated,
-  TurnAdvanced
+  TurnAdvanced,
+  AudioUploaded
 );
 
 export type RoomEvent = Schema.Schema.Type<typeof RoomEventSchema>;
@@ -184,6 +202,17 @@ const TurnAdvancedPayloadSchema = Schema.Struct({
   nextParticipantId: Schema.String
 });
 
+const AudioUploadedPayloadSchema = Schema.Struct({
+  roomId: Schema.String,
+  turnId: Schema.String,
+  audioKey: Schema.String,
+  requestId: Schema.String,
+  contentType: Schema.optional(Schema.String),
+  fileSizeBytes: Schema.Number,
+  durationMs: Schema.optional(Schema.Number),
+  timestamp: Schema.Number
+});
+
 // MsgPack decoders for each payload type
 const payloadDecoders = {
   TurnAccepted: Schema.decodeSync(MsgPack.schema(TurnAcceptedPayloadSchema)),
@@ -193,7 +222,8 @@ const payloadDecoders = {
   PlayerJoined: Schema.decodeSync(MsgPack.schema(PlayerJoinedPayloadSchema)),
   PlayerDisconnected: Schema.decodeSync(MsgPack.schema(PlayerDisconnectedPayloadSchema)),
   NpcTurnGenerated: Schema.decodeSync(MsgPack.schema(NpcTurnGeneratedPayloadSchema)),
-  TurnAdvanced: Schema.decodeSync(MsgPack.schema(TurnAdvancedPayloadSchema))
+  TurnAdvanced: Schema.decodeSync(MsgPack.schema(TurnAdvancedPayloadSchema)),
+  AudioUploaded: Schema.decodeSync(MsgPack.schema(AudioUploadedPayloadSchema))
 } as const;
 
 // MsgPack encoders for each payload type (for testing)
@@ -205,7 +235,8 @@ export const payloadEncoders = {
   PlayerJoined: Schema.encodeSync(MsgPack.schema(PlayerJoinedPayloadSchema)),
   PlayerDisconnected: Schema.encodeSync(MsgPack.schema(PlayerDisconnectedPayloadSchema)),
   NpcTurnGenerated: Schema.encodeSync(MsgPack.schema(NpcTurnGeneratedPayloadSchema)),
-  TurnAdvanced: Schema.encodeSync(MsgPack.schema(TurnAdvancedPayloadSchema))
+  TurnAdvanced: Schema.encodeSync(MsgPack.schema(TurnAdvancedPayloadSchema)),
+  AudioUploaded: Schema.encodeSync(MsgPack.schema(AudioUploadedPayloadSchema))
 } as const;
 
 /**
@@ -293,6 +324,20 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
         toStepIndex: payload.toStepIndex,
         nextParticipantType: payload.nextParticipantType,
         nextParticipantId: payload.nextParticipantId
+      };
+    }
+    case "AudioUploaded": {
+      const payload = payloadDecoders.AudioUploaded(entry.payload);
+      return {
+        type: "AudioUploaded",
+        roomId: payload.roomId,
+        turnId: payload.turnId,
+        audioKey: payload.audioKey,
+        requestId: payload.requestId,
+        contentType: payload.contentType,
+        fileSizeBytes: payload.fileSizeBytes,
+        durationMs: payload.durationMs,
+        timestamp: payload.timestamp
       };
     }
     default:

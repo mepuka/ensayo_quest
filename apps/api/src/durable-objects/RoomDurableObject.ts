@@ -10,7 +10,7 @@
 import type { SqlStorage } from "@cloudflare/workers-types";
 import { EventLogDurableObject } from "@effect/experimental/EventLogServer/Cloudflare";
 import * as EventLog from "@effect/experimental/EventLog";
-import type { CloudflareEnv } from "../services/Env";
+import { Env, type CloudflareEnv } from "../services/Env.js";
 import { makeDoSqliteEventLogStorageLayer } from "./EventLogStorage";
 import { decodeRoomEventEnvelopeMsgPack, type RoomEvent } from "../domain/RoomProtocol";
 import { SqliteClient as DoSqliteClient } from "@effect/sql-sqlite-do";
@@ -40,6 +40,7 @@ import {
   ValidatedSession,
   type RoomDomainContext
 } from "../domain/index.js";
+import { TurnQueueLive } from "../services/TurnQueue.js";
 import { EventJournalError, RemoteId } from "@effect/experimental/EventJournal";
 import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
@@ -65,15 +66,22 @@ interface WebSocketSessionAttachment {
 
 /**
  * Create the full runtime layer for the room domain.
- * Includes EventLog, handlers, state persistence, and SQL client.
+ * Includes EventLog, handlers, state persistence, SQL client, and TurnQueue.
  *
  * The SqlClient is merged into the output so it's available for schema migrations.
  */
-const makeRoomDomainLayer = (storage: SqlStorage) => {
+const makeRoomDomainLayer = (storage: SqlStorage, cloudflareEnv: CloudflareEnv) => {
   const sqliteLayer = DoSqliteClient.layerConfig(Config.succeed({ db: storage }));
+  const envLayer = Layer.succeed(Env, cloudflareEnv);
+  const turnQueueLayer = TurnQueueLive.pipe(Layer.provide(envLayer));
+
   // Merge SqlClient into output so it's available for applyRoomSchema
+  // Also provide TurnQueue for AudioUploaded handler (Architecture Invariant #9)
   return Layer.mergeAll(
-    RoomDomainLive.pipe(Layer.provide(sqliteLayer)),
+    RoomDomainLive.pipe(
+      Layer.provide(sqliteLayer),
+      Layer.provide(turnQueueLayer)
+    ),
     sqliteLayer
   );
 };
@@ -215,7 +223,7 @@ export class RoomDurableObject extends EventLogDurableObject {
 
     // Create runtime with full domain layer
     this.roomRuntime = ManagedRuntime.make(
-      makeRoomDomainLayer(storage).pipe(Layer.orDie)
+      makeRoomDomainLayer(storage, env).pipe(Layer.orDie)
     );
 
     // blockConcurrencyWhile ensures no requests are processed until schema is applied

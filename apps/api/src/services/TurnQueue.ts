@@ -9,7 +9,12 @@ export class QueueError extends Schema.TaggedError<QueueError>()("QueueError", {
 export type TurnJob = {
   roomId: string;
   turnId: string;
-  status: "partial" | "final";
+  /** Status of the turn:
+   * - "partial": Turn submitted but audio not yet uploaded (deprecated)
+   * - "ready": Audio uploaded, ready for scoring (preferred)
+   * - "final": Scoring complete
+   */
+  status: "partial" | "ready" | "final";
 };
 
 export interface TurnQueueService {

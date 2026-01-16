@@ -96,6 +96,24 @@ export class RoomErrorPayload extends Schema.Class<RoomErrorPayload>("RoomErrorP
   timestamp: Schema.Number
 }) {}
 
+/**
+ * AudioUploaded - Emitted when audio for a turn has been uploaded to R2.
+ *
+ * This event gates the scoring pipeline - scoring can only begin after audio exists.
+ * @see docs/ARCHITECTURE.md - Invariant #9: Scoring enqueue gated on AudioUploaded
+ * @see docs/plans/2026-01-16-frontend-voice-stack-design.md - Section 5
+ */
+export class AudioUploadedPayload extends Schema.Class<AudioUploadedPayload>("AudioUploadedPayload")({
+  roomId: Schema.String,
+  turnId: Schema.String,
+  audioKey: Schema.String,
+  requestId: Schema.String, // Required for EventLog-level idempotency
+  contentType: Schema.optional(Schema.String),
+  fileSizeBytes: Schema.Number,
+  durationMs: Schema.optional(Schema.Number),
+  timestamp: Schema.Number
+}) {}
+
 // =============================================================================
 // Event Group Definition
 // =============================================================================
@@ -164,6 +182,13 @@ export const RoomEventGroup = EventGroup.empty
     tag: "RoomError",
     primaryKey: (payload: RoomErrorPayload) => payload.roomId,
     payload: RoomErrorPayload,
+    success: Schema.Void,
+    error: RoomEventHandlerError
+  })
+  .add({
+    tag: "AudioUploaded",
+    primaryKey: (payload: AudioUploadedPayload) => payload.roomId,
+    payload: AudioUploadedPayload,
     success: Schema.Void,
     error: RoomEventHandlerError
   });

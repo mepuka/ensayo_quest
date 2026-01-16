@@ -66,7 +66,11 @@ it.skip("emits ScoreUpdated with language review feedback", async () => {
     markMessageProcessed: () => Effect.void,
     cleanupOldProcessedMessages: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
-    recordTurnRequest: () => Effect.void
+    recordTurnRequest: () => Effect.void,
+    getAudioUploadByTurnId: () => Effect.succeed(null),
+    getAudioUploadByRequestId: () => Effect.succeed(null),
+    recordAudioUpload: () => Effect.void,
+    recordAudioUploadRequest: () => Effect.void
   });
   const doLayer = Layer.succeed(RoomDoClient, {
     emitRoomEvent: (_roomId, event) =>

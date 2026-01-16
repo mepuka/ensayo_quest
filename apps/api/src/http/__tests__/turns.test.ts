@@ -3,8 +3,6 @@ import { Effect } from "effect";
 import { createRoom, submitTurn, validateTurnSubmission } from "../handlers";
 import { Db } from "../../services/Db";
 import { RoomIdGenerator } from "../../services/RoomIdGenerator";
-import { TurnQueue } from "../../services/TurnQueue";
-import type { TurnJob } from "../../services/TurnQueue";
 import { Turnstile } from "../../security/Turnstile";
 import { RoomDoClient } from "../../services/RoomDoClient";
 
@@ -61,7 +59,11 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
         markMessageProcessed: () => Effect.void,
         cleanupOldProcessedMessages: () => Effect.void,
         getTurnByRequestId: () => Effect.succeed(null),
-        recordTurnRequest: () => Effect.void
+        recordTurnRequest: () => Effect.void,
+        getAudioUploadByTurnId: () => Effect.succeed(null),
+        getAudioUploadByRequestId: () => Effect.succeed(null),
+        recordAudioUpload: () => Effect.void,
+        recordAudioUploadRequest: () => Effect.void
       }),
       Effect.provideService(RoomIdGenerator, {
         generate: Effect.sync(() => "room-1")
@@ -74,8 +76,12 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
   expect(createdTemplate).toBe("template-1");
 });
 
-it("submitTurn enqueues a job for valid input", async () => {
-  let enqueued: Array<TurnJob> = [];
+/**
+ * submitTurn no longer enqueues scoring.
+ * Scoring is now enqueued by AudioUploaded event handler (Architecture Invariant #9).
+ * @see docs/ARCHITECTURE.md - Invariant #9: Scoring gated on AudioUploaded
+ */
+it("submitTurn records turn and emits TurnAccepted (without enqueuing scoring)", async () => {
   let inserted: Array<string> = [];
   let emitted: Array<string> = [];
   const input = {
@@ -134,14 +140,13 @@ it("submitTurn enqueues a job for valid input", async () => {
         markMessageProcessed: () => Effect.void,
         cleanupOldProcessedMessages: () => Effect.void,
         getTurnByRequestId: () => Effect.succeed(null),
-        recordTurnRequest: () => Effect.void
+        recordTurnRequest: () => Effect.void,
+        getAudioUploadByTurnId: () => Effect.succeed(null),
+        getAudioUploadByRequestId: () => Effect.succeed(null),
+        recordAudioUpload: () => Effect.void,
+        recordAudioUploadRequest: () => Effect.void
       }),
-      Effect.provideService(TurnQueue, {
-        enqueueTurn: (job) =>
-          Effect.sync(() => {
-            enqueued.push(job);
-          })
-      }),
+      // NOTE: TurnQueue is NOT needed - scoring is enqueued by AudioUploaded handler
       Effect.provideService(RoomDoClient, {
         emitRoomEvent: (_roomId, event) =>
           Effect.sync(() => {
@@ -159,18 +164,11 @@ it("submitTurn enqueues a job for valid input", async () => {
   expect(result.turnId).toBe("turn-1");
   expect(result.status).toBe("processing");
   expect(inserted).toEqual(["turn-1"]);
-  expect(enqueued).toEqual([
-    {
-      roomId: "r",
-      turnId: "turn-1",
-      status: "partial"
-    }
-  ]);
+  // NOTE: No scoring enqueued - that happens in AudioUploaded handler
   expect(emitted).toEqual(["TurnAccepted"]);
 });
 
 it("submitTurn rejects when Turnstile check fails", async () => {
-  let enqueued: Array<TurnJob> = [];
   let inserted: Array<string> = [];
   let emitted: Array<string> = [];
   const input = {
@@ -230,14 +228,13 @@ it("submitTurn rejects when Turnstile check fails", async () => {
           markMessageProcessed: () => Effect.void,
           cleanupOldProcessedMessages: () => Effect.void,
           getTurnByRequestId: () => Effect.succeed(null),
-          recordTurnRequest: () => Effect.void
+          recordTurnRequest: () => Effect.void,
+          getAudioUploadByTurnId: () => Effect.succeed(null),
+          getAudioUploadByRequestId: () => Effect.succeed(null),
+          recordAudioUpload: () => Effect.void,
+          recordAudioUploadRequest: () => Effect.void
         }),
-        Effect.provideService(TurnQueue, {
-          enqueueTurn: (job) =>
-            Effect.sync(() => {
-              enqueued.push(job);
-            })
-        }),
+        // NOTE: TurnQueue is NOT needed - scoring is enqueued by AudioUploaded handler
         Effect.provideService(RoomDoClient, {
           emitRoomEvent: (_roomId, event) =>
             Effect.sync(() => {
@@ -255,6 +252,5 @@ it("submitTurn rejects when Turnstile check fails", async () => {
   );
   expect(result._tag).toBe("Left");
   expect(inserted).toEqual([]);
-  expect(enqueued).toEqual([]);
   expect(emitted).toEqual([]);
 });

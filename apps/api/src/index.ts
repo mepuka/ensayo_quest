@@ -175,10 +175,14 @@ export default {
       }
 
       // Route: POST /api/turns/:turnId/audio
+      // Requires headers: X-Room-Id, X-Request-Id
       const uploadAudioParams = matchRoute(method, segments, routes.uploadAudio);
       if (uploadAudioParams) {
         const turnId = uploadAudioParams.turnId ?? "";
+        const roomId = request.headers.get("X-Room-Id") ?? "";
+        const requestId = request.headers.get("X-Request-Id") ?? crypto.randomUUID();
         if (!turnId) return new Response("Not Found", { status: 404 });
+        if (!roomId) return new Response("Missing X-Room-Id header", { status: 400 });
         const audio = yield* Effect.tryPromise({
           try: () => request.arrayBuffer(),
           catch: (cause) => new RequestReadError({ reason: String(cause) })
@@ -186,6 +190,8 @@ export default {
         const contentType = request.headers.get("Content-Type") ?? undefined;
         const result = yield* handlers.uploadTurnAudio({
           turnId,
+          roomId,
+          requestId,
           audio,
           ...(contentType ? { contentType } : {})
         });

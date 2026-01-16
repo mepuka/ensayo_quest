@@ -78,7 +78,11 @@ it("scores turn and emits ScoreUpdated", async () => {
     markMessageProcessed: () => Effect.void,
     cleanupOldProcessedMessages: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
-    recordTurnRequest: () => Effect.void
+    recordTurnRequest: () => Effect.void,
+    getAudioUploadByTurnId: () => Effect.succeed(null),
+    getAudioUploadByRequestId: () => Effect.succeed(null),
+    recordAudioUpload: () => Effect.void,
+    recordAudioUploadRequest: () => Effect.void
   });
   const scoringLayer = Layer.succeed(ScoringService, {
     evaluate: (input) =>

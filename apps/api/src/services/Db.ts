@@ -31,6 +31,22 @@ export interface DbService {
   // Turn request idempotency (Architecture Invariant #2)
   getTurnByRequestId: (roomId: string, requestId: string) => Effect.Effect<string | null, DbError, never>;
   recordTurnRequest: (roomId: string, requestId: string, turnId: string) => Effect.Effect<void, DbError, never>;
+  // Audio upload idempotency (Architecture Invariant #2, #9)
+  // @see docs/plans/2026-01-16-frontend-voice-stack-design.md - Section 5
+  getAudioUploadByTurnId: (turnId: string) => Effect.Effect<{ audioKey: string; requestId: string } | null, DbError, never>;
+  getAudioUploadByRequestId: (turnId: string, requestId: string) => Effect.Effect<string | null, DbError, never>;
+  recordAudioUpload: (input: {
+    turnId: string;
+    requestId: string;
+    audioKey: string;
+    contentType: string | null;
+    fileSizeBytes: number;
+  }) => Effect.Effect<void, DbError, never>;
+  recordAudioUploadRequest: (input: {
+    turnId: string;
+    requestId: string;
+    audioKey: string;
+  }) => Effect.Effect<void, DbError, never>;
 }
 
 export class Db extends Context.Tag("Db")<Db, DbService>() {}
@@ -226,7 +242,59 @@ export const DbLive = Layer.effect(
           })
         ),
       recordTurnRequest: (roomId: string, requestId: string, turnId: string) =>
-        run(queries.recordTurnRequest, [roomId, requestId, turnId, Date.now()])
+        run(queries.recordTurnRequest, [roomId, requestId, turnId, Date.now()]),
+      // Audio upload idempotency (Architecture Invariant #2, #9)
+      getAudioUploadByTurnId: (turnId: string) =>
+        Effect.tryPromise({
+          try: () => env.DB.prepare(queries.getAudioUploadByTurnId).bind(turnId).first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.map((row) => {
+            if (!row) return null;
+            const record = row as Record<string, unknown>;
+            return {
+              audioKey: String(record.audio_key ?? ""),
+              requestId: String(record.request_id ?? "")
+            };
+          })
+        ),
+      getAudioUploadByRequestId: (turnId: string, requestId: string) =>
+        Effect.tryPromise({
+          try: () => env.DB.prepare(queries.getAudioUploadByRequestId).bind(turnId, requestId).first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.map((row) => {
+            if (!row) return null;
+            const record = row as Record<string, unknown>;
+            return String(record.audio_key ?? "");
+          })
+        ),
+      recordAudioUpload: (input: {
+        turnId: string;
+        requestId: string;
+        audioKey: string;
+        contentType: string | null;
+        fileSizeBytes: number;
+      }) =>
+        run(queries.recordAudioUpload, [
+          input.turnId,
+          input.requestId,
+          input.audioKey,
+          input.contentType,
+          input.fileSizeBytes,
+          Date.now()
+        ]),
+      recordAudioUploadRequest: (input: {
+        turnId: string;
+        requestId: string;
+        audioKey: string;
+      }) =>
+        run(queries.recordAudioUploadRequest, [
+          input.turnId,
+          input.requestId,
+          input.audioKey,
+          Date.now()
+        ])
     };
   })
 );

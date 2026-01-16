@@ -5,10 +5,9 @@ import { decodeHttpTurnSubmission } from "../domain/HttpProtocol";
 import { Db } from "../services/Db";
 import { AudioBucket } from "../services/CloudflareLayers";
 import { RoomIdGenerator } from "../services/RoomIdGenerator";
-import { TurnQueue } from "../services/TurnQueue";
 import { Turnstile } from "../security/Turnstile";
 import { RoomDoClient } from "../services/RoomDoClient";
-import { TurnAccepted } from "../domain/RoomProtocol";
+import { TurnAccepted, AudioUploaded } from "../domain/RoomProtocol";
 
 export class InvalidTurnSubmission extends Schema.TaggedError<InvalidTurnSubmission>()(
   "InvalidTurnSubmission",
@@ -49,13 +48,20 @@ export const createRoom = Effect.fn(function* (input: {
   return { roomId, seedPrompt: template.seedPrompt };
 });
 
-export const submitTurn = Effect.fn(function* (
+/**
+ * Submit a turn for processing.
+ *
+ * NOTE: Scoring is NOT enqueued here. Scoring is enqueued when AudioUploaded
+ * event is received (Architecture Invariant #9).
+ *
+ * @see docs/ARCHITECTURE.md - Invariant #9: Scoring gated on AudioUploaded
+ */
+export const submitTurn = Effect.fn("handlers.submitTurn")(function* (
   roomId: string,
   input: unknown,
   options?: { turnstileToken?: string }
 ) {
   const db = yield* Db;
-  const queue = yield* TurnQueue;
   const turnstile = yield* Turnstile;
   const roomDo = yield* RoomDoClient;
   const generator = yield* RoomIdGenerator;
@@ -100,11 +106,8 @@ export const submitTurn = Effect.fn(function* (
   // Record request → turnId mapping for idempotency
   yield* db.recordTurnRequest(roomId, submission.requestId, turnId);
 
-  yield* queue.enqueueTurn({
-    roomId,
-    turnId,
-    status: "partial"
-  });
+  // Emit TurnAccepted - client knows turn was recorded
+  // NOTE: Scoring will be enqueued when client uploads audio (AudioUploaded event)
   yield* roomDo.emitRoomEvent(
     roomId,
     new TurnAccepted({ type: "TurnAccepted", turnId })
@@ -112,28 +115,117 @@ export const submitTurn = Effect.fn(function* (
   return { turnId, status: "processing" as const };
 });
 
-export const uploadTurnAudio = Effect.fn(function* (input: {
+/**
+ * Upload audio for a turn with atomicity-safe idempotency.
+ *
+ * Implements Architecture Invariants #2 (idempotency) and #9 (AudioUploaded gates scoring).
+ * @see docs/plans/2026-01-16-frontend-voice-stack-design.md - Section 5
+ */
+export const uploadTurnAudio = Effect.fn("handlers.uploadTurnAudio")(function* (input: {
   turnId: string;
+  roomId: string;
+  requestId: string;
   audio: ArrayBuffer;
   contentType?: string;
 }) {
   const bucket = yield* AudioBucket;
   const db = yield* Db;
-  yield* db.getTurnSubmission(input.turnId).pipe(
+  const roomDo = yield* RoomDoClient;
+
+  // 1. Verify turn exists and belongs to the room
+  const turn = yield* db.getTurnSubmission(input.turnId).pipe(
     Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
   );
+  if (turn.roomId !== input.roomId) {
+    return yield* new AudioUploadFailed({ reason: "room_id_mismatch" });
+  }
+
   const audioKey = `turns/${input.turnId}`;
-  yield* Effect.tryPromise({
-    try: () =>
-      bucket.put(audioKey, input.audio, {
-        httpMetadata: {
-          contentType: input.contentType ?? "application/octet-stream"
-        }
-      }),
-    catch: (cause) => new AudioUploadFailed({ reason: String(cause) })
-  });
-  yield* db.updateTurnAudioKey({ turnId: input.turnId, audioKey });
-  return { audioKey };
+  const contentType = input.contentType ?? "audio/wav";
+
+  // 2. Per-turn idempotency guard (only one audio per turn)
+  const existingTurnUpload = yield* db.getAudioUploadByTurnId(input.turnId).pipe(
+    Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+  );
+
+  if (existingTurnUpload) {
+    // Turn already has audio - emit event anyway to handle atomicity gap
+    // (R2 + DB succeeded but DO event might have failed on previous attempt)
+    yield* roomDo.emitRoomEvent(
+      input.roomId,
+      new AudioUploaded({
+        type: "AudioUploaded",
+        roomId: input.roomId,
+        turnId: input.turnId,
+        audioKey: existingTurnUpload.audioKey,
+        requestId: existingTurnUpload.requestId,
+        contentType,
+        fileSizeBytes: input.audio.byteLength,
+        timestamp: Date.now()
+      })
+    ).pipe(
+      Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+    );
+    return { audioKey: existingTurnUpload.audioKey, status: "already_uploaded" as const };
+  }
+
+  // 3. Per-request idempotency check (same requestId = same request retry)
+  const existingRequest = yield* db.getAudioUploadByRequestId(input.turnId, input.requestId).pipe(
+    Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+  );
+
+  if (!existingRequest) {
+    // 4. Upload to R2 (first upload for this turn)
+    yield* Effect.tryPromise({
+      try: () =>
+        bucket.put(audioKey, input.audio, {
+          httpMetadata: { contentType }
+        }),
+      catch: (cause) => new AudioUploadFailed({ reason: String(cause) })
+    });
+
+    // 5. Record upload for idempotency
+    yield* db.recordAudioUpload({
+      turnId: input.turnId,
+      requestId: input.requestId,
+      audioKey,
+      contentType,
+      fileSizeBytes: input.audio.byteLength
+    }).pipe(
+      Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+    );
+
+    yield* db.recordAudioUploadRequest({
+      turnId: input.turnId,
+      requestId: input.requestId,
+      audioKey
+    }).pipe(
+      Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+    );
+
+    // 6. Update turn with audio key (legacy field)
+    yield* db.updateTurnAudioKey({ turnId: input.turnId, audioKey });
+  }
+
+  // 7. Emit AudioUploaded event to DO (always, even on retry for atomicity)
+  // DO event handler will check its own idempotency and enqueue scoring
+  yield* roomDo.emitRoomEvent(
+    input.roomId,
+    new AudioUploaded({
+      type: "AudioUploaded",
+      roomId: input.roomId,
+      turnId: input.turnId,
+      audioKey,
+      requestId: input.requestId,
+      contentType,
+      fileSizeBytes: input.audio.byteLength,
+      timestamp: Date.now()
+    })
+  ).pipe(
+    Effect.mapError((cause) => new AudioUploadFailed({ reason: String(cause) }))
+  );
+
+  return { audioKey, status: "uploaded" as const };
 });
 
 export const streamRoom = Effect.succeed({ status: "streaming" as const });

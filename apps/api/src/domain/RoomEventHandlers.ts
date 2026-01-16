@@ -10,6 +10,7 @@ import { Effect, Layer, Context } from "effect";
 import * as Schema from "effect/Schema";
 import { EventLog } from "@effect/experimental";
 import { SqlClient } from "@effect/sql";
+import { TurnQueue } from "../services/TurnQueue.js";
 import {
   RoomEventGroup,
   RoomEventHandlerError,
@@ -20,7 +21,8 @@ import {
   type PlayerJoinedPayload,
   type PlayerDisconnectedPayload,
   type RoomCompletedPayload,
-  type RoomErrorPayload
+  type RoomErrorPayload,
+  type AudioUploadedPayload
 } from "./RoomEventGroup.js";
 
 // =============================================================================
@@ -462,6 +464,72 @@ export const SessionValidationLive = Layer.effect(
 );
 
 // =============================================================================
+// Audio Scoring Idempotency Service (Architecture Invariant #9)
+// =============================================================================
+
+/**
+ * Service to ensure scoring enqueue from AudioUploaded is idempotent.
+ * Prevents duplicate scoring jobs on event replay.
+ */
+export class AudioScoringIdempotency extends Context.Tag("AudioScoringIdempotency")<
+  AudioScoringIdempotency,
+  {
+    /**
+     * Check if scoring has already been enqueued for this turn.
+     * Returns true if already enqueued (should skip), false otherwise.
+     */
+    readonly hasEnqueued: (turnId: string) => Effect.Effect<boolean, RoomEventHandlerError>;
+    /**
+     * Record that scoring has been enqueued for this turn.
+     * Should be called BEFORE enqueuing to ensure idempotency.
+     */
+    readonly recordEnqueued: (turnId: string, audioKey: string) => Effect.Effect<void, RoomEventHandlerError>;
+  }
+>() {}
+
+/**
+ * SQL-based audio scoring idempotency using audio_scoring_enqueued table.
+ */
+export const AudioScoringIdempotencyLive = Layer.effect(
+  AudioScoringIdempotency,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    return {
+      hasEnqueued: (turnId: string) =>
+        sql<{ turn_id: string }>`
+          SELECT turn_id FROM audio_scoring_enqueued
+          WHERE turn_id = ${turnId}
+        `.pipe(
+          Effect.map((rows) => rows.length > 0),
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "hasEnqueued",
+              roomId: turnId,
+              cause
+            })
+          )
+        ),
+
+      recordEnqueued: (turnId: string, audioKey: string) =>
+        sql`
+          INSERT INTO audio_scoring_enqueued (turn_id, audio_key, enqueued_at)
+          VALUES (${turnId}, ${audioKey}, ${Date.now()})
+        `.pipe(
+          Effect.asVoid,
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "recordEnqueued",
+              roomId: turnId,
+              cause
+            })
+          )
+        )
+    };
+  })
+);
+
+// =============================================================================
 // State Persistence Service
 // =============================================================================
 
@@ -722,6 +790,53 @@ export const RoomEventHandlersLive = EventLog.group(
 
         // RoomError is logged but doesn't change state machine
         // Could add error state if needed
+        const newState = new RoomProjection({
+          ...current,
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
+
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
+      .handle("AudioUploaded", Effect.fn(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+        const idempotency = yield* AudioScoringIdempotency;
+        const queue = yield* TurnQueue;
+        const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);
+
+        // Idempotency check: skip if scoring already enqueued for this turn
+        // @see docs/ARCHITECTURE.md - Invariant #9: Scoring gated on AudioUploaded
+        const alreadyEnqueued = yield* idempotency.hasEnqueued(payload.turnId);
+        if (alreadyEnqueued) {
+          yield* Effect.logDebug(`Skipping duplicate scoring enqueue for turn ${payload.turnId}`);
+          // Still update state projection
+          const newState = new RoomProjection({
+            ...current,
+            lastEventId: entry.idString,
+            updatedAt: payload.timestamp
+          });
+          yield* persistence.upsertState(payload.roomId, newState);
+          return;
+        }
+
+        // Record idempotency BEFORE enqueuing (prevents race)
+        yield* idempotency.recordEnqueued(payload.turnId, payload.audioKey);
+
+        // Fire-and-forget: enqueue scoring
+        // Effect.fork detaches - queue failure won't fail event handler
+        yield* Effect.fork(
+          queue.enqueueTurn({
+            roomId: payload.roomId,
+            turnId: payload.turnId,
+            status: "ready" // Audio exists, ready for scoring
+          }).pipe(
+            Effect.tapError((e) =>
+              Effect.logError(`Queue enqueue failed for turn ${payload.turnId}`, e)
+            )
+          )
+        );
+
+        // Update state projection
         const newState = new RoomProjection({
           ...current,
           lastEventId: entry.idString,
