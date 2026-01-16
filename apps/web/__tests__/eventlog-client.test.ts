@@ -3,7 +3,7 @@ import { Effect, Layer, Stream, Chunk } from "effect";
 import * as Redacted from "effect/Redacted";
 import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
 import { Entry, makeEntryId } from "@effect/experimental/EventJournal";
-import { encodeRoomEventMsgPack, type RoomEvent } from "../../shared/src/RoomProtocol";
+import { payloadEncoders, type RoomEvent } from "../../shared/src/RoomProtocol";
 import {
   buildRoomStreamUrl,
   decodeRoomEventEntry,
@@ -11,7 +11,22 @@ import {
   roomEventStreamFromEntries
 } from "../eventlog/EventLogClient";
 
-const scoreEvent: RoomEvent = {
+// Server payload format (matches what the server writes to journal)
+const scorePayload = {
+  roomId: "room-1",
+  turnId: "turn-1",
+  scores: {
+    fluency: 0.7,
+    vocab: 0.6,
+    naturalness: 0.8
+  },
+  overallScore: 0.7,
+  feedback: ["Good flow"],
+  nextPrompt: "Continue the conversation."
+};
+
+// Expected RoomEvent after decoding (what the client sees)
+const expectedScoreEvent: RoomEvent = {
   type: "ScoreUpdated",
   turnId: "turn-1",
   evaluation: {
@@ -24,8 +39,8 @@ const scoreEvent: RoomEvent = {
     overallScore: 0.7,
     feedback: ["Good flow"],
     nextPrompt: "Continue the conversation.",
-    modelVersion: "test-model",
-    confidence: 0.9
+    modelVersion: "unknown", // Default value from decoder
+    confidence: 1.0 // Default value from decoder
   }
 };
 
@@ -61,31 +76,33 @@ describe("makeRoomIdentity", () => {
 
 describe("decodeRoomEventEntry", () => {
   it("decodes entry payloads to RoomEvent", () => {
-    const payload = encodeRoomEventMsgPack(scoreEvent);
+    // Use server payload format (without type field, flat structure)
+    const payload = payloadEncoders.ScoreUpdated(scorePayload);
     const entry = new Entry({
       id: makeEntryId(),
-      event: scoreEvent.type,
+      event: "ScoreUpdated", // Server stores event type separately
       primaryKey: "room-1",
       payload
     });
     const decoded = decodeRoomEventEntry(entry);
 
-    expect(decoded).toEqual(scoreEvent);
+    expect(decoded).toEqual(expectedScoreEvent);
   });
 });
 
 describe("roomEventStreamFromEntries", () => {
   it("maps entry streams to RoomEvent streams", async () => {
-    const payload = encodeRoomEventMsgPack(scoreEvent);
+    // Use server payload format (without type field, flat structure)
+    const payload = payloadEncoders.ScoreUpdated(scorePayload);
     const entry = new Entry({
       id: makeEntryId(),
-      event: scoreEvent.type,
+      event: "ScoreUpdated", // Server stores event type separately
       primaryKey: "room-1",
       payload
     });
     const stream = roomEventStreamFromEntries(Stream.make(entry));
     const result = await Effect.runPromise(Stream.runCollect(stream));
 
-    expect(Chunk.toReadonlyArray(result)).toEqual([scoreEvent]);
+    expect(Chunk.toReadonlyArray(result)).toEqual([expectedScoreEvent]);
   });
 });

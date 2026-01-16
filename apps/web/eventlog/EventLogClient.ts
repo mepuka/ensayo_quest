@@ -5,7 +5,7 @@ import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
 import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventJournal from "@effect/experimental/EventJournal";
 import * as Socket from "@effect/platform/Socket";
-import { decodeRoomEventMsgPack, type RoomEvent } from "../../shared/src/RoomProtocol";
+import { decodeJournalEntry, type RoomEvent } from "../../shared/src/RoomProtocol";
 
 export const makeRoomIdentity = Effect.fn(function* (roomId: string) {
   const encryption = yield* EventLogEncryption.EventLogEncryption;
@@ -24,8 +24,15 @@ export const buildRoomStreamUrl = (baseUrl: string, roomId: string) => {
 
 export const getRoomStreamUrl = (roomId: string) => buildRoomStreamUrl(window.location.href, roomId);
 
+/**
+ * Decode a journal entry into a RoomEvent.
+ *
+ * Uses the shared protocol's decodeJournalEntry which handles the server's
+ * wire format where event type is in entry.event and payload is without
+ * the type field.
+ */
 export const decodeRoomEventEntry = (entry: EventJournal.Entry): RoomEvent =>
-  decodeRoomEventMsgPack(entry.payload);
+  decodeJournalEntry(entry);
 
 export const roomEventStreamFromEntries = (
   entries: Stream.Stream<EventJournal.Entry>

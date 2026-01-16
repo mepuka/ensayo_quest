@@ -40,6 +40,25 @@ export type RoomErrorState = {
 };
 
 /**
+ * Participant in a room session.
+ * @see docs/ARCHITECTURE.md - Invariant #8: Participant membership tracked in state
+ */
+export type Participant = {
+  readonly playerId: string;
+  readonly sessionId: string;
+  readonly isConnected: boolean;
+  readonly joinedAt: number;
+};
+
+/**
+ * Whose turn it is currently.
+ */
+export type CurrentTurnHolder = {
+  readonly type: "Player" | "NPC";
+  readonly id: string;
+};
+
+/**
  * Full room state projected from event stream.
  *
  * @see docs/ARCHITECTURE.md - Invariant #1: EventLog is the single source of truth
@@ -53,8 +72,15 @@ export type RoomState = {
   readonly status: RoomStatus;
 
   // Progress tracking
+  readonly currentStepIndex: number;
   readonly currentTurnIndex: number;
   readonly objectivesCompleted: number;
+
+  // Whose turn is it
+  readonly currentTurnHolder: CurrentTurnHolder | null;
+
+  // Participants (Architecture Invariant #8)
+  readonly participants: ReadonlyArray<Participant>;
 
   // Conversation history
   readonly history: ReadonlyArray<RoomHistoryEntry>;
@@ -83,8 +109,11 @@ export const initialRoomState: RoomState = {
   roomId: null,
   scenarioId: null,
   status: "connecting",
+  currentStepIndex: 0,
   currentTurnIndex: 0,
   objectivesCompleted: 0,
+  currentTurnHolder: null,
+  participants: [],
   history: [],
   turn: initialTurnState,
   error: null,
@@ -109,6 +138,7 @@ const handleRoomSnapshot: EventHandler<Extract<RoomEvent, { type: "RoomSnapshot"
   roomId: event.roomId,
   scenarioId: event.scenarioId,
   status: event.status === "completed" ? "completed" : "playing",
+  currentStepIndex: event.currentTurnIndex, // Map from legacy field
   currentTurnIndex: event.currentTurnIndex,
   objectivesCompleted: event.objectivesCompleted,
   history: event.history,
@@ -179,6 +209,82 @@ const handleRoomError: EventHandler<Extract<RoomEvent, { type: "Error" }>> = (
   }
 });
 
+/**
+ * Handle PlayerJoined - a player has connected to the room.
+ * @see docs/ARCHITECTURE.md - Invariant #8: Participant membership tracked in state
+ */
+const handlePlayerJoined: EventHandler<Extract<RoomEvent, { type: "PlayerJoined" }>> = (
+  state,
+  event
+) => ({
+  ...state,
+  // Update roomId if not set (first event for this room)
+  roomId: state.roomId ?? event.roomId,
+  // Transition from connecting to playing on first join
+  status: state.status === "connecting" ? "playing" : state.status,
+  participants: [
+    // Remove any existing entry for this session (reconnection case)
+    ...state.participants.filter((p) => p.sessionId !== event.sessionId),
+    // Add new participant as connected
+    {
+      playerId: event.playerId,
+      sessionId: event.sessionId,
+      isConnected: true,
+      joinedAt: event.timestamp
+    }
+  ]
+});
+
+/**
+ * Handle PlayerDisconnected - a player has disconnected from the room.
+ * @see docs/ARCHITECTURE.md - Invariant #8: Participant membership tracked in state
+ */
+const handlePlayerDisconnected: EventHandler<Extract<RoomEvent, { type: "PlayerDisconnected" }>> = (
+  state,
+  event
+) => ({
+  ...state,
+  participants: state.participants.map((p) =>
+    p.sessionId === event.sessionId ? { ...p, isConnected: false } : p
+  )
+});
+
+/**
+ * Handle NpcTurnGenerated - NPC has generated a response.
+ * Adds NPC content to history.
+ */
+const handleNpcTurnGenerated: EventHandler<Extract<RoomEvent, { type: "NpcTurnGenerated" }>> = (
+  state,
+  event
+) => ({
+  ...state,
+  history: [
+    ...state.history,
+    {
+      turnId: event.turnId,
+      role: "npc" as const,
+      text: event.content
+    }
+  ],
+  currentStepIndex: event.stepIndex
+});
+
+/**
+ * Handle TurnAdvanced - turn has advanced to next step.
+ * Updates whose turn it is.
+ */
+const handleTurnAdvanced: EventHandler<Extract<RoomEvent, { type: "TurnAdvanced" }>> = (
+  state,
+  event
+) => ({
+  ...state,
+  currentStepIndex: event.toStepIndex,
+  currentTurnHolder: {
+    type: event.nextParticipantType,
+    id: event.nextParticipantId
+  }
+});
+
 // =============================================================================
 // Main Reducer
 // =============================================================================
@@ -204,6 +310,14 @@ export const reduceRoomEvent = (state: RoomState, event: RoomEvent): RoomState =
       return handleRoomCompleted(state, event);
     case "Error":
       return handleRoomError(state, event);
+    case "PlayerJoined":
+      return handlePlayerJoined(state, event);
+    case "PlayerDisconnected":
+      return handlePlayerDisconnected(state, event);
+    case "NpcTurnGenerated":
+      return handleNpcTurnGenerated(state, event);
+    case "TurnAdvanced":
+      return handleTurnAdvanced(state, event);
     default: {
       // Exhaustive check - TypeScript will error if we miss a case
       const _exhaustive: never = event;

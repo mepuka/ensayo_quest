@@ -74,44 +74,15 @@ export const roomStateAtom = Atom.make((get) => {
 });
 
 // =============================================================================
-// Derived Atoms
+// Derived Streams (helpers for creating derived state streams)
 // =============================================================================
 
 /**
- * Room status atom - derived from roomStateAtom.
- * Useful for conditional rendering based on connection/completion state.
+ * Create a derived stream that maps room state to a specific field.
+ * Each derived atom creates its own stream to avoid atom composition issues.
  */
-export const roomStatusAtom = Atom.make((get) => {
-  const stateStream = get(roomStateAtom);
-  return Stream.map(stateStream, (state) => state.status);
-});
-
-/**
- * Room history atom - derived from roomStateAtom.
- * Provides conversation history for display.
- */
-export const roomHistoryAtom = Atom.make((get) => {
-  const stateStream = get(roomStateAtom);
-  return Stream.map(stateStream, (state) => state.history);
-});
-
-/**
- * Current turn atom - derived from roomStateAtom.
- * Provides current turn scoring state.
- */
-export const currentTurnAtom = Atom.make((get) => {
-  const stateStream = get(roomStateAtom);
-  return Stream.map(stateStream, (state) => state.turn);
-});
-
-/**
- * Room error atom - derived from roomStateAtom.
- * Non-null when room is in error state.
- */
-export const roomErrorAtom = Atom.make((get) => {
-  const stateStream = get(roomStateAtom);
-  return Stream.map(stateStream, (state) => state.error);
-});
+const makeRoomStateStream = (roomId: string) =>
+  roomStateStreamFromEvents(roomEventStreamForId(roomId), initialRoomState);
 
 // =============================================================================
 // Legacy Compatibility
@@ -134,6 +105,9 @@ export const scorePanelStreamFromEvents = (
  * Kept for backward compatibility with existing components.
  */
 export const scorePanelAtom = Atom.make((get) => {
-  const stateStream = get(roomStateAtom);
-  return Stream.map(stateStream, deriveScorePanelState);
+  const roomId = get(roomIdAtom);
+  if (Option.isNone(roomId) || roomId.value.trim() === "") {
+    return Stream.make(deriveScorePanelState(initialRoomState));
+  }
+  return Stream.map(makeRoomStateStream(roomId.value), deriveScorePanelState);
 });
