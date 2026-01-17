@@ -136,12 +136,16 @@ jobs:
       - name: Install wrangler
         run: bun add -g wrangler
 
-      # Link root node_modules for wrangler bundler (Bun workspaces hoist deps)
+      # Link node_modules for wrangler bundler
+      # Bun workspaces hoist deps to root, and workspace packages need explicit symlinks
       - name: Link node_modules for wrangler
         run: |
           rm -rf apps/api/node_modules apps/shared/node_modules
           ln -s ../../node_modules apps/api/node_modules
           ln -s ../../node_modules apps/shared/node_modules
+          # Symlink workspace package @ensayo/shared into node_modules
+          mkdir -p node_modules/@ensayo
+          ln -sf ../../apps/shared node_modules/@ensayo/shared
 
       # D1 migrations (staging)
       - name: Run D1 migrations (staging)
@@ -188,12 +192,16 @@ jobs:
       - name: Install wrangler
         run: bun add -g wrangler
 
-      # Link root node_modules for wrangler bundler (Bun workspaces hoist deps)
+      # Link node_modules for wrangler bundler
+      # Bun workspaces hoist deps to root, and workspace packages need explicit symlinks
       - name: Link node_modules for wrangler
         run: |
           rm -rf apps/api/node_modules apps/shared/node_modules
           ln -s ../../node_modules apps/api/node_modules
           ln -s ../../node_modules apps/shared/node_modules
+          # Symlink workspace package @ensayo/shared into node_modules
+          mkdir -p node_modules/@ensayo
+          ln -sf ../../apps/shared node_modules/@ensayo/shared
 
       # D1 migrations (production)
       - name: Run D1 migrations (production)
