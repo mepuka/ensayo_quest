@@ -34,7 +34,11 @@ describe("reduceRoomEvent", () => {
   it("updates turn state for TurnAccepted", () => {
     const event: RoomEvent = {
       type: "TurnAccepted",
-      turnId: "turn-2"
+      turnId: "turn-2",
+      roomId: "room-1",
+      playerId: "user",
+      transcript: "Hello",
+      timestamp: Date.now()
     };
     const next = reduceRoomEvent(initialRoomState, event);
 

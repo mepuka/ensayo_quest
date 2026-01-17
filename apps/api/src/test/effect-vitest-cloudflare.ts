@@ -269,7 +269,8 @@ export const createTestContext = <R, E>(layer: Layer.Layer<R, E>) => {
  * ```
  */
 export const getDurableObjectStub = (
-  namespace: { get: (id: unknown) => unknown; idFromName: (name: string) => unknown },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  namespace: { get: (id: any) => unknown; idFromName: (name: string) => unknown },
   name: string
 ): Effect.Effect<unknown> => Effect.sync(() => namespace.get(namespace.idFromName(name)));
 

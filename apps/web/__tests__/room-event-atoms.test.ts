@@ -7,7 +7,7 @@ import { roomStateStreamFromEvents } from "../eventlog/RoomEventAtoms";
 describe("roomStateStreamFromEvents", () => {
   it("reduces event streams into room states", async () => {
     const events: Array<RoomEvent> = [
-      { type: "TurnAccepted", turnId: "turn-1" },
+      { type: "TurnAccepted", turnId: "turn-1", roomId: "room-1", playerId: "user", transcript: "Hello", timestamp: Date.now() },
       {
         type: "ScoreUpdated",
         turnId: "turn-1",
@@ -44,7 +44,7 @@ describe("roomStateStreamFromEvents", () => {
         objectivesCompleted: 0,
         history: []
       },
-      { type: "TurnAccepted", turnId: "turn-1" },
+      { type: "TurnAccepted", turnId: "turn-1", roomId: "room-1", playerId: "user", transcript: "Hello", timestamp: Date.now() },
       {
         type: "ScoreUpdated",
         turnId: "turn-1",
