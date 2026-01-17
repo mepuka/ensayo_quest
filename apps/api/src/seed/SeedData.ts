@@ -312,6 +312,6 @@ export const validateSeedCompleteness = Effect.gen(function* () {
   const missing = expected.filter((e) => !actual.includes(e));
 
   if (missing.length > 0) {
-    return yield* Effect.fail(new SeedValidationError({ missing }));
+    return yield* new SeedValidationError({ missing });
   }
 });
