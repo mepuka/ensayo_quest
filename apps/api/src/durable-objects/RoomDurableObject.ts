@@ -47,6 +47,7 @@ import { TurnQueueLive } from "../services/TurnQueue.js";
 import { EventJournalError, RemoteId, Entry, makeEntryId } from "@effect/experimental/EventJournal";
 import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
+import { PersistedEntry } from "@effect/experimental/EventLogServer";
 import { EventLogEncryption, EncryptedRemoteEntry, layerSubtle as EventLogEncryptionLayer } from "@effect/experimental/EventLogEncryption";
 import * as Redacted from "effect/Redacted";
 
@@ -458,11 +459,16 @@ export class RoomDurableObject extends EventLogDurableObject {
         // Persist to storage to get authoritative sequence numbers
         // This is CRITICAL for P1-01: reconnect replay support
         // Storage.write() returns EncryptedRemoteEntry with proper sequences
-        const persistedEntries = yield* storage.write([entry], {
-          publicKey: identity.publicKey,
-          iv: encrypted.iv,
-          encryptedEntries: encrypted.encryptedEntries
-        });
+        const persistedEntries = yield* storage.write(
+          identity.publicKey,
+          [
+            new PersistedEntry({
+              entryId: entry.id,
+              iv: encrypted.iv,
+              encryptedEntry: encrypted.encryptedEntries[0]
+            })
+          ]
+        );
 
         yield* Effect.logDebug("Persisted entry to storage", {
           eventType,
@@ -606,7 +612,7 @@ export class RoomDurableObject extends EventLogDurableObject {
       // Path: ["api", "rooms", ":roomId", "stream"]
       const roomsIndex = pathParts.indexOf("rooms");
       if (roomsIndex >= 0 && roomsIndex + 1 < pathParts.length) {
-        return pathParts[roomsIndex + 1];
+        return pathParts[roomsIndex + 1] ?? null;
       }
     } catch {
       // URL parsing failed

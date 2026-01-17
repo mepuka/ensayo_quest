@@ -223,8 +223,8 @@ describe("TurnScoringConsumer Integration (mock mode)", () => {
 
     // Verify event was emitted
     expect(emittedEvents).toHaveLength(1);
-    expect(emittedEvents[0].roomId).toBe("room-integration-test");
-    expect((emittedEvents[0].event as { type: string }).type).toBe("ScoreUpdated");
+    expect(emittedEvents[0]!.roomId).toBe("room-integration-test");
+    expect((emittedEvents[0]!.event as { type: string }).type).toBe("ScoreUpdated");
   });
 
   it("falls back gracefully when LanguageReview is disabled", async () => {
