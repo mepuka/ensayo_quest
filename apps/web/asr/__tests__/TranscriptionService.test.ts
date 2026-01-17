@@ -212,9 +212,9 @@ describe("TranscriptionService", () => {
     // Should have received progress events
     expect(result.length).toBeGreaterThan(0);
     // First event should be "initiate"
-    expect(result[0].status).toBe("initiate");
+    expect(result[0]!.status).toBe("initiate");
     // Last event should be "ready"
-    expect(result[result.length - 1].status).toBe("ready");
+    expect(result[result.length - 1]!.status).toBe("ready");
   });
 
   it("accepts custom configuration", async () => {

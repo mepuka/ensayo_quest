@@ -66,11 +66,11 @@ mock.module("@ricky0123/vad-web", () => ({
       onSpeechEnd?: (audio: Float32Array) => void;
       onFrameProcessed?: (probs: { isSpeech: number }) => void;
     }) => {
-      mockVadCallbacks = {
-        onSpeechStart: options.onSpeechStart,
-        onSpeechEnd: options.onSpeechEnd,
-        onFrameProcessed: options.onFrameProcessed
-      };
+      // Reset and assign only defined callbacks
+      mockVadCallbacks = {};
+      if (options.onSpeechStart) mockVadCallbacks.onSpeechStart = options.onSpeechStart;
+      if (options.onSpeechEnd) mockVadCallbacks.onSpeechEnd = options.onSpeechEnd;
+      if (options.onFrameProcessed) mockVadCallbacks.onFrameProcessed = options.onFrameProcessed;
       currentMockVad = createMockMicVAD();
       return currentMockVad;
     }
@@ -135,7 +135,7 @@ describe("VadService", () => {
     );
 
     expect(result.length).toBe(1);
-    expect(result[0]._tag).toBe("SpeechStart");
+    expect(result[0]!._tag).toBe("SpeechStart");
   });
 
   it("emits SpeechEnd event with audio data", async () => {
@@ -164,9 +164,10 @@ describe("VadService", () => {
     );
 
     expect(result.length).toBe(1);
-    expect(result[0]._tag).toBe("SpeechEnd");
-    if (result[0]._tag === "SpeechEnd") {
-      expect(result[0].audio).toEqual(testAudio);
+    const event = result[0]!;
+    expect(event._tag).toBe("SpeechEnd");
+    if (event._tag === "SpeechEnd") {
+      expect(event.audio).toEqual(testAudio);
     }
   });
 
@@ -194,9 +195,10 @@ describe("VadService", () => {
     );
 
     expect(result.length).toBe(1);
-    expect(result[0]._tag).toBe("FrameProcessed");
-    if (result[0]._tag === "FrameProcessed") {
-      expect(result[0].probability).toBe(0.85);
+    const event = result[0]!;
+    expect(event._tag).toBe("FrameProcessed");
+    if (event._tag === "FrameProcessed") {
+      expect(event.probability).toBe(0.85);
     }
   });
 
@@ -366,9 +368,9 @@ describe("VadService", () => {
     );
 
     expect(result.length).toBe(3);
-    expect(result[0]._tag).toBe("SpeechStart");
-    expect(result[1]._tag).toBe("FrameProcessed");
-    expect(result[2]._tag).toBe("SpeechEnd");
+    expect(result[0]!._tag).toBe("SpeechStart");
+    expect(result[1]!._tag).toBe("FrameProcessed");
+    expect(result[2]!._tag).toBe("SpeechEnd");
   });
 });
 
