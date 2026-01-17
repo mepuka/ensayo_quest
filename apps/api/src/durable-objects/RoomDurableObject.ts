@@ -12,7 +12,7 @@ import { EventLogDurableObject } from "@effect/experimental/EventLogServer/Cloud
 import * as EventLog from "@effect/experimental/EventLog";
 import { Env, type CloudflareEnv } from "../services/Env.js";
 import { makeDoSqliteEventLogRuntimeLayer } from "./EventLogStorage";
-import { decodeRoomEventEnvelopeMsgPack, type RoomEvent } from "../domain/RoomProtocol";
+import { decodeRoomEventEnvelopeMsgPack, payloadEncoders, type RoomEvent } from "../domain/RoomProtocol";
 import { SqliteClient as DoSqliteClient } from "@effect/sql-sqlite-do";
 import { layerConfig as DoSqliteNoTxLayerConfig } from "./db/DoSqliteClientNoTx";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -38,6 +38,7 @@ import {
   PlayerJoinedPayload,
   PlayerDisconnectedPayload,
   RoomStatePersistence,
+  TurnAcceptedIdempotency,
   SessionValidation,
   ValidatedSession,
   type RoomDomainContext
@@ -48,7 +49,6 @@ import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
 import { EventLogEncryption, EncryptedRemoteEntry, layerSubtle as EventLogEncryptionLayer } from "@effect/experimental/EventLogEncryption";
 import * as Redacted from "effect/Redacted";
-import { encodeRoomEventMsgPack } from "../domain/RoomProtocol";
 
 // =============================================================================
 // WebSocket Session Attachment Type
@@ -165,6 +165,17 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
     }
 
     case "TurnAccepted": {
+      // Idempotency check: skip if this turnId was already accepted
+      const turnIdempotency = yield* TurnAcceptedIdempotency;
+      const alreadyAccepted = yield* turnIdempotency.hasAccepted(event.turnId);
+      if (alreadyAccepted) {
+        yield* Effect.logDebug(`TurnAccepted already processed for turnId ${event.turnId}, skipping`);
+        break;
+      }
+
+      // Record idempotency BEFORE writing to EventLog
+      yield* turnIdempotency.recordAccepted(event.turnId, roomId);
+
       // Get current state to determine step indices
       const currentState = yield* persistence.getState(roomId);
       const currentStepIndex = currentState?.currentStepIndex ?? 0;
@@ -176,8 +187,8 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
         payload: new TurnAcceptedPayload({
           roomId,
           turnId: event.turnId,
-          playerId: "unknown", // TODO: Get from session context
-          transcript: "", // TODO: Get from request
+          playerId: event.playerId,
+          transcript: event.transcript,
           timestamp
         })
       });
@@ -333,11 +344,20 @@ export class RoomDurableObject extends EventLogDurableObject {
         const encryption = yield* EventLogEncryption;
         const identity = yield* makeRoomIdentity(roomId);
 
-        // Create entry from event
-        const payload = encodeRoomEventMsgPack(event);
+        // Extract payload WITHOUT type field - client's decodeJournalEntry expects this format
+        // The event type is stored in entry.event, not in the payload
+        const { type: eventType, ...payloadWithoutType } = event;
+        if (!(eventType in payloadEncoders)) {
+          yield* Effect.logWarning(`No encoder for event type: ${eventType}, skipping broadcast`);
+          return;
+        }
+        // Cast to any to avoid TypeScript stack overflow on complex indexed type inference
+        const encoder = (payloadEncoders as Record<string, (input: unknown) => Uint8Array>)[eventType];
+        const payload = encoder(payloadWithoutType);
+
         const entry = new Entry({
           id: makeEntryId(),
-          event: event.type,
+          event: eventType,
           primaryKey: roomId,
           payload
         });

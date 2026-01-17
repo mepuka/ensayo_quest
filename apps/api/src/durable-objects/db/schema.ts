@@ -80,6 +80,14 @@ CREATE TABLE IF NOT EXISTS audio_scoring_enqueued (
   audio_key TEXT NOT NULL,
   enqueued_at INTEGER NOT NULL
 );
+
+-- Idempotency table for TurnAccepted events
+-- Prevents duplicate TurnAccepted writes on HTTP retry
+CREATE TABLE IF NOT EXISTS turn_accepted_idempotency (
+  turn_id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  accepted_at INTEGER NOT NULL
+);
 `;
 
 /**

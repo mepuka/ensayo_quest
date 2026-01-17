@@ -40,6 +40,8 @@ export {
   AlarmIdempotencyLive,
   AudioScoringIdempotency,
   AudioScoringIdempotencyLive,
+  TurnAcceptedIdempotency,
+  TurnAcceptedIdempotencyLive,
   SessionValidation,
   SessionValidationLive,
   ValidatedSession,
@@ -57,7 +59,7 @@ export {
 } from "./RoomEventHandlers.js";
 
 import { RoomEventGroup } from "./RoomEventGroup.js";
-import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive, AudioScoringIdempotencyLive, SessionValidationLive } from "./RoomEventHandlers.js";
+import { RoomEventHandlersLive, RoomStatePersistenceLive, StepAdvanceIdempotencyLive, AlarmIdempotencyLive, AudioScoringIdempotencyLive, TurnAcceptedIdempotencyLive, SessionValidationLive } from "./RoomEventHandlers.js";
 
 // =============================================================================
 // EventLog Schema
@@ -153,6 +155,8 @@ export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   Layer.provide(AlarmIdempotencyLive),
   // Audio scoring idempotency (Architecture Invariant #9)
   Layer.provide(AudioScoringIdempotencyLive),
+  // TurnAccepted idempotency for retry handling
+  Layer.provide(TurnAcceptedIdempotencyLive),
   // Session validation for WebSocket connections (Architecture Invariants #7, #8)
   Layer.provide(SessionValidationLive),
   // EventLog.layer requires EventJournal
@@ -161,7 +165,8 @@ export const RoomDomainLive = EventLog.layer(RoomEventSchema).pipe(
   Layer.provide(RoomIdentityLive),
   // Merge services into a single layer for external access
   Layer.provideMerge(RoomStatePersistenceLive),
-  Layer.provideMerge(SessionValidationLive)
+  Layer.provideMerge(SessionValidationLive),
+  Layer.provideMerge(TurnAcceptedIdempotencyLive)
 );
 
 /**

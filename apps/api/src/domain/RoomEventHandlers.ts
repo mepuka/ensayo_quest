@@ -249,6 +249,72 @@ export const AlarmIdempotencyLive = Layer.effect(
 );
 
 // =============================================================================
+// TurnAccepted Idempotency Service
+// =============================================================================
+
+/**
+ * Service to ensure TurnAccepted events are idempotent.
+ * Prevents duplicate TurnAccepted writes on HTTP retry.
+ */
+export class TurnAcceptedIdempotency extends Context.Tag("TurnAcceptedIdempotency")<
+  TurnAcceptedIdempotency,
+  {
+    /**
+     * Check if TurnAccepted has already been processed for this turnId.
+     * Returns true if already processed (should skip), false otherwise.
+     */
+    readonly hasAccepted: (turnId: string) => Effect.Effect<boolean, RoomEventHandlerError>;
+    /**
+     * Record that TurnAccepted has been processed for this turnId.
+     * Should be called atomically with the EventLog write.
+     */
+    readonly recordAccepted: (turnId: string, roomId: string) => Effect.Effect<void, RoomEventHandlerError>;
+  }
+>() {}
+
+/**
+ * SQL-based TurnAccepted idempotency using turn_accepted_idempotency table.
+ */
+export const TurnAcceptedIdempotencyLive = Layer.effect(
+  TurnAcceptedIdempotency,
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+
+    return {
+      hasAccepted: (turnId: string) =>
+        sql<{ turn_id: string }>`
+          SELECT turn_id FROM turn_accepted_idempotency
+          WHERE turn_id = ${turnId}
+        `.pipe(
+          Effect.map((rows) => rows.length > 0),
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "hasAccepted",
+              roomId: turnId,
+              cause
+            })
+          )
+        ),
+
+      recordAccepted: (turnId: string, roomId: string) =>
+        sql`
+          INSERT INTO turn_accepted_idempotency (turn_id, room_id, accepted_at)
+          VALUES (${turnId}, ${roomId}, ${Date.now()})
+        `.pipe(
+          Effect.asVoid,
+          Effect.mapError((cause) =>
+            new RoomEventHandlerError({
+              operation: "recordAccepted",
+              roomId,
+              cause
+            })
+          )
+        )
+    };
+  })
+);
+
+// =============================================================================
 // Session Validation Service (Architecture Invariants #7, #8)
 // =============================================================================
 

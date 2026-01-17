@@ -128,6 +128,14 @@ export function useTurn(): UseTurnResult {
     }
   }, [uploadAudioResult, clearResult]);
 
+  // Reset uploadedTurnIdRef on upload failure to allow retry
+  // Without this, a failed upload blocks all future uploads for that turnId
+  useEffect(() => {
+    if (Result.isFailure(uploadAudioResult) && !Result.isWaiting(uploadAudioResult)) {
+      uploadedTurnIdRef.current = null;
+    }
+  }, [uploadAudioResult]);
+
   // Submit with debounce protection
   const submitTurn = useCallback(() => {
     if (!canSubmit || !asrResult || !roomId) return;

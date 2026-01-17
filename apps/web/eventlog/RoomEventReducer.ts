@@ -182,12 +182,21 @@ const handleRoomSnapshot: EventHandler<Extract<RoomEvent, { type: "RoomSnapshot"
 
 /**
  * Handle TurnAccepted - player turn has been accepted, awaiting scoring.
+ * Appends the player's transcript to conversation history.
  */
 const handleTurnAccepted: EventHandler<Extract<RoomEvent, { type: "TurnAccepted" }>> = (
   state,
   event
 ) => ({
   ...state,
+  history: [
+    ...state.history,
+    {
+      turnId: event.turnId,
+      role: "user" as const,
+      text: event.transcript
+    }
+  ],
   turn: {
     turnId: event.turnId,
     scoringStatus: "pending",
