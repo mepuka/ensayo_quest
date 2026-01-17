@@ -89,8 +89,9 @@ jobs:
 
       - name: Deploy to Pages (preview)
         id: deploy
+        working-directory: apps/web
         run: |
-          DEPLOY_OUTPUT=$(wrangler pages deploy apps/web/dist \
+          DEPLOY_OUTPUT=$(wrangler pages deploy dist \
             --project-name=ensayo-quest-web \
             --branch=${{ github.head_ref }} \
             --commit-hash=${{ github.sha }})
@@ -159,8 +160,9 @@ jobs:
 
       # Deploy Pages (staging/production URL)
       - name: Deploy Pages (staging)
+        working-directory: apps/web
         run: |
-          wrangler pages deploy apps/web/dist \
+          wrangler pages deploy dist \
             --project-name=ensayo-quest-web \
             --branch=main
 
@@ -215,8 +217,9 @@ jobs:
 
       # Deploy Pages (production)
       - name: Deploy Pages (production)
+        working-directory: apps/web
         run: |
-          wrangler pages deploy apps/web/dist \
+          wrangler pages deploy dist \
             --project-name=ensayo-quest-web \
             --branch=production \
             --commit-hash=${{ github.sha }}

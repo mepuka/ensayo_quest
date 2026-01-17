@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "ensayo-quest-web",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-01-15",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "services": [
+    {
+      "binding": "API",
+      "service": "ensayo-quest-api-staging"
+    }
+  ],
+
+  "env": {
+    "production": {
+      "services": [
+        {
+          "binding": "API",
+          "service": "ensayo-quest-api"
+        }
+      ]
+    }
+  }
+}
