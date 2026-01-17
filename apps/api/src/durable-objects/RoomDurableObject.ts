@@ -351,8 +351,8 @@ export class RoomDurableObject extends EventLogDurableObject {
           yield* Effect.logWarning(`No encoder for event type: ${eventType}, skipping broadcast`);
           return;
         }
-        // Cast to any to avoid TypeScript stack overflow on complex indexed type inference
-        const encoder = (payloadEncoders as Record<string, (input: unknown) => Uint8Array>)[eventType];
+        // Cast to Record and use non-null assertion - we already checked eventType is in payloadEncoders
+        const encoder = (payloadEncoders as Record<string, (input: unknown) => Uint8Array>)[eventType]!;
         const payload = encoder(payloadWithoutType);
 
         const entry = new Entry({
