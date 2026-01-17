@@ -395,12 +395,18 @@ export class RoomDurableObject extends EventLogDurableObject {
    *
    * This bridges server-side EventLog.write() to WebSocket clients by:
    * 1. Encrypting the event using room identity
-   * 2. Encoding as EventLogRemote.Changes message
-   * 3. Sending to all connected WebSockets
+   * 2. Persisting to EventLogServer.Storage to get authoritative sequence numbers
+   * 3. Encoding as EventLogRemote.Changes message
+   * 4. Sending to all connected WebSockets
    *
    * CRITICAL: roomId must be the human-readable room name (e.g., "abc-123"),
    * NOT the DO's internal state.id. This ensures client and server derive
    * the same encryption identity for the EventLogRemote protocol.
+   *
+   * CRITICAL (P1-01): Entries MUST be persisted to EventLogServer.Storage so that:
+   * - Sequences are assigned by storage (monotonic, persistent)
+   * - RequestChanges can serve persisted entries on reconnect
+   * - Clients can resync from their last known sequence
    *
    * Uses this.runtime (from EventLogDurableObject parent) which has
    * EventLogEncryption and EventLogServer.Storage services.
@@ -411,16 +417,14 @@ export class RoomDurableObject extends EventLogDurableObject {
   private broadcastEventToClients(roomId: string, event: RoomEvent): void {
     const webSockets = this.ctx.getWebSockets();
 
-    if (webSockets.length === 0) {
-      console.log("[RoomDO] No WebSocket clients connected, skipping broadcast");
-      return;
-    }
-
-    console.log("[RoomDO] Broadcasting event to", webSockets.length, "clients:", event.type);
+    // Always persist to storage even if no clients connected
+    // This ensures replay works when clients reconnect
+    console.log("[RoomDO] Broadcasting event:", event.type, "to", webSockets.length, "clients");
 
     this.runtime.runFork(
       Effect.gen(function* () {
         const encryption = yield* EventLogEncryption;
+        const storage = yield* EventLogServer.Storage;
         const identity = yield* makeRoomIdentity(roomId);
 
         // Convert event to encoder-compatible payload format
@@ -449,23 +453,32 @@ export class RoomDurableObject extends EventLogDurableObject {
         // Encrypt the entry
         const encrypted = yield* encryption.encrypt(identity, [entry]);
 
-        // Create EncryptedRemoteEntry with sequence number
-        // Note: sequence is assigned per-client from their perspective, using 0 for broadcast
-        const encryptedEntries = encrypted.encryptedEntries.map(
-          (encryptedEntry, index) =>
-            EncryptedRemoteEntry.make({
-              sequence: index, // Will be ignored by client, they use their local sequence
-              entryId: entry.id,
-              iv: encrypted.iv,
-              encryptedEntry
-            })
-        );
+        // Persist to storage to get authoritative sequence numbers
+        // This is CRITICAL for P1-01: reconnect replay support
+        // Storage.write() returns EncryptedRemoteEntry with proper sequences
+        const persistedEntries = yield* storage.write([entry], {
+          publicKey: identity.publicKey,
+          iv: encrypted.iv,
+          encryptedEntries: encrypted.encryptedEntries
+        });
 
-        // Encode as Changes response
+        yield* Effect.logDebug("Persisted entry to storage", {
+          eventType,
+          entryCount: persistedEntries.length,
+          sequences: persistedEntries.map((e) => e.sequence)
+        });
+
+        // Skip broadcast if no clients connected (but entry is already persisted)
+        if (webSockets.length === 0) {
+          yield* Effect.logDebug("No WebSocket clients connected, entry persisted for replay");
+          return;
+        }
+
+        // Encode as Changes response using persisted entries (with storage-assigned sequences)
         const changes = EventLogRemote.encodeResponse(
           new EventLogRemote.Changes({
             publicKey: identity.publicKey,
-            entries: encryptedEntries
+            entries: persistedEntries
           })
         );
 
@@ -484,7 +497,8 @@ export class RoomDurableObject extends EventLogDurableObject {
 
         yield* Effect.logInfo("Broadcast complete", {
           eventType: event.type,
-          clientCount: webSockets.length
+          clientCount: webSockets.length,
+          sequences: persistedEntries.map((e) => e.sequence)
         });
       }).pipe(
         Effect.provide(EventLogEncryptionLayer),
