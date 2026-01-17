@@ -19,8 +19,9 @@ Deliverable: Written decisions in `docs/production_wiring_spec.md`.
 - Confirm DO binding is consistent. `apps/api/wrangler.toml:21`
 
 ### 1.2 D1 seed for scenario templates
-- Add seed data for `scenario_templates` (or a loader job).
-- Current seed only inserts a user. `apps/api/db/seed.sql:1`
+- Seed data uses Effect-native ScenarioTemplate instances. `apps/api/src/seed/SeedData.ts:1`
+- CI generates SQL from SeedData via `apps/api/scripts/generate-seed-sql.ts`
+- All 16 scenarios (4 topics × 4 levels) are validated at generation time.
 
 ### 1.3 Config service
 - Introduce a config tag for runtime policy (model hosting, scoring weights, Turnstile settings).

@@ -44,5 +44,8 @@ export const queries = {
   recordAudioUpload:
     "INSERT INTO audio_uploads (turn_id, request_id, audio_key, content_type, file_size_bytes, uploaded_at) VALUES (?, ?, ?, ?, ?, ?)",
   recordAudioUploadRequest:
-    "INSERT INTO audio_upload_requests (turn_id, request_id, audio_key, uploaded_at) VALUES (?, ?, ?, ?)"
+    "INSERT INTO audio_upload_requests (turn_id, request_id, audio_key, uploaded_at) VALUES (?, ?, ?, ?)",
+  // Scenario template seeding
+  insertScenarioTemplate:
+    "INSERT OR REPLACE INTO scenario_templates (id, topic, level, region, register, template_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
 };

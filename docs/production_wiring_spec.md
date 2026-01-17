@@ -25,7 +25,7 @@ These must be confirmed before final implementation.
 | Identity | Anonymous vs authenticated | Authenticated identity with roles | TBD |
 | LLM provider/model | Google Gemini 3 class | Gemini 3 class, low temperature | Locked |
 
-References: `apps/api/src/http/handlers.ts:36`, `apps/api/db/seed.sql:1`, `apps/api/src/services/ScenarioBuilder.ts:18`, `node_modules/@xenova/transformers/src/env.js:66`, `apps/api/src/services/LanguageReview.ts:79`
+References: `apps/api/src/http/handlers.ts:36`, `apps/api/src/seed/SeedData.ts:1`, `apps/api/src/services/ScenarioBuilder.ts:18`, `node_modules/@xenova/transformers/src/env.js:66`, `apps/api/src/services/LanguageReview.ts:79`
 
 ## Architecture Overview
 

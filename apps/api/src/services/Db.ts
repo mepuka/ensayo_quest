@@ -51,6 +51,12 @@ export interface DbService {
     requestId: string;
     audioKey: string;
   }) => Effect.Effect<void, DbError, never>;
+  // Scenario template seeding
+  insertScenarioTemplate: (input: {
+    template: ScenarioTemplate;
+    region: string;
+    register: string;
+  }) => Effect.Effect<void, DbError, never>;
 }
 
 export class Db extends Context.Tag("Db")<Db, DbService>() {}
@@ -312,6 +318,21 @@ export const DbLive = Layer.effect(
           input.turnId,
           input.requestId,
           input.audioKey,
+          Date.now()
+        ]),
+      // Scenario template seeding
+      insertScenarioTemplate: (input: {
+        template: ScenarioTemplate;
+        region: string;
+        register: string;
+      }) =>
+        run(queries.insertScenarioTemplate, [
+          input.template.templateId,
+          input.template.topic,
+          input.template.level,
+          input.region,
+          input.register,
+          JSON.stringify(Schema.encodeSync(ScenarioTemplate)(input.template)),
           Date.now()
         ])
     };

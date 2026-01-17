@@ -153,6 +153,13 @@ jobs:
         run: wrangler d1 migrations apply DB --env staging --remote
         working-directory: apps/api
 
+      # Seed data (staging) - validates completeness before generating SQL
+      - name: Apply seed data (staging)
+        working-directory: apps/api
+        run: |
+          set -o pipefail
+          bun run scripts/generate-seed-sql.ts | wrangler d1 execute DB --env staging --remote --file=-
+
       # Deploy Workers (staging)
       - name: Deploy Workers (staging)
         run: wrangler deploy --env staging
@@ -209,6 +216,13 @@ jobs:
       - name: Run D1 migrations (production)
         run: wrangler d1 migrations apply DB --env production --remote
         working-directory: apps/api
+
+      # Seed data (production) - validates completeness before generating SQL
+      - name: Apply seed data (production)
+        working-directory: apps/api
+        run: |
+          set -o pipefail
+          bun run scripts/generate-seed-sql.ts | wrangler d1 execute DB --env production --remote --file=-
 
       # Deploy Workers (production)
       - name: Deploy Workers (production)
