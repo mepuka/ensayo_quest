@@ -250,13 +250,13 @@ TurnAccepted → AdvanceStep → (room continues)
 
 These architectural issues have been identified and tracked:
 
-| Bead             | Severity | Issue                          | Status |
-| ---------------- | -------- | ------------------------------ | ------ |
-| ensayo_quest-9oz | P0       | Event-State Source of Truth    | Open   |
-| ensayo_quest-jq9 | P0       | Turn Progression Double-Advance | Open   |
-| ensayo_quest-aw9 | P1       | Command Idempotency            | Open   |
-| ensayo_quest-8lv | P1       | Participant Membership/Auth    | Open   |
-| ensayo_quest-4mv | P2       | Scalability (deferred)         | Open   |
+| Bead             | Severity | Issue                          | Status   |
+| ---------------- | -------- | ------------------------------ | -------- |
+| ensayo_quest-9oz | P0       | Event-State Source of Truth    | ✅ Closed |
+| ensayo_quest-jq9 | P0       | Turn Progression Double-Advance | ✅ Closed |
+| ensayo_quest-aw9 | P1       | Command Idempotency            | ✅ Closed |
+| ensayo_quest-8lv | P1       | Participant Membership/Auth    | ✅ Closed |
+| ensayo_quest-4mv | P2       | Scalability (deferred)         | Open     |
 
 See `docs/plans/2026-01-16-multiplayer-architecture-design.md` for full remediation details.
 
