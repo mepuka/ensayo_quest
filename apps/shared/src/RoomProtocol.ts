@@ -30,6 +30,21 @@ export class RoomHistoryEntry extends Schema.Class<RoomHistoryEntry>("RoomHistor
 // Client-Side Event Types (with type field for union discrimination)
 // =============================================================================
 
+/**
+ * RoomInitialized - Emitted when a room is created.
+ * Persists room metadata (seedPrompt, topic, level) to EventLog.
+ * @see docs/ARCHITECTURE.md - Events section, Invariant #10
+ */
+export class RoomInitialized extends Schema.Class<RoomInitialized>("RoomInitialized")({
+  type: Schema.Literal("RoomInitialized"),
+  roomId: Schema.String,
+  scenarioId: Schema.String,
+  seedPrompt: Schema.String,
+  topic: Schema.String,
+  level: Schema.String,
+  timestamp: Schema.Number
+}) {}
+
 export class RoomSnapshot extends Schema.Class<RoomSnapshot>("RoomSnapshot")({
   type: Schema.Literal("RoomSnapshot"),
   roomId: Schema.String,
@@ -117,6 +132,7 @@ export class AudioUploaded extends Schema.Class<AudioUploaded>("AudioUploaded")(
 }) {}
 
 export const RoomEventSchema = Schema.Union(
+  RoomInitialized,
   RoomSnapshot,
   TurnAccepted,
   ScoreUpdated,
@@ -135,6 +151,15 @@ export type RoomEvent = Schema.Schema.Type<typeof RoomEventSchema>;
 // Server Payload Schemas (for decoding journal entries)
 // Server stores events without the type field - it's in entry.event
 // =============================================================================
+
+const RoomInitializedPayloadSchema = Schema.Struct({
+  roomId: Schema.String,
+  scenarioId: Schema.String,
+  seedPrompt: Schema.String,
+  topic: Schema.String,
+  level: Schema.String,
+  timestamp: Schema.Number
+});
 
 const TurnAcceptedPayloadSchema = Schema.Struct({
   roomId: Schema.String,
@@ -215,6 +240,7 @@ const AudioUploadedPayloadSchema = Schema.Struct({
 
 // MsgPack decoders for each payload type
 const payloadDecoders = {
+  RoomInitialized: Schema.decodeSync(MsgPack.schema(RoomInitializedPayloadSchema)),
   TurnAccepted: Schema.decodeSync(MsgPack.schema(TurnAcceptedPayloadSchema)),
   ScoreUpdated: Schema.decodeSync(MsgPack.schema(ScoreUpdatedPayloadSchema)),
   RoomCompleted: Schema.decodeSync(MsgPack.schema(RoomCompletedPayloadSchema)),
@@ -228,6 +254,7 @@ const payloadDecoders = {
 
 // MsgPack encoders for each payload type (for testing)
 export const payloadEncoders = {
+  RoomInitialized: Schema.encodeSync(MsgPack.schema(RoomInitializedPayloadSchema)),
   TurnAccepted: Schema.encodeSync(MsgPack.schema(TurnAcceptedPayloadSchema)),
   ScoreUpdated: Schema.encodeSync(MsgPack.schema(ScoreUpdatedPayloadSchema)),
   RoomCompleted: Schema.encodeSync(MsgPack.schema(RoomCompletedPayloadSchema)),
@@ -250,6 +277,18 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
   const eventType = entry.event;
 
   switch (eventType) {
+    case "RoomInitialized": {
+      const payload = payloadDecoders.RoomInitialized(entry.payload);
+      return {
+        type: "RoomInitialized",
+        roomId: payload.roomId,
+        scenarioId: payload.scenarioId,
+        seedPrompt: payload.seedPrompt,
+        topic: payload.topic,
+        level: payload.level,
+        timestamp: payload.timestamp
+      };
+    }
     case "TurnAccepted": {
       const payload = payloadDecoders.TurnAccepted(entry.payload);
       return { type: "TurnAccepted", turnId: payload.turnId };

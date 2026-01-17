@@ -68,6 +68,11 @@ export type RoomState = {
   readonly roomId: string | null;
   readonly scenarioId: string | null;
 
+  // Room metadata (from RoomInitialized event, survives refresh)
+  readonly seedPrompt: string | null;
+  readonly topic: string | null;
+  readonly level: string | null;
+
   // Room status
   readonly status: RoomStatus;
 
@@ -108,6 +113,9 @@ export const initialTurnState: TurnState = {
 export const initialRoomState: RoomState = {
   roomId: null,
   scenarioId: null,
+  seedPrompt: null,
+  topic: null,
+  level: null,
   status: "connecting",
   currentStepIndex: 0,
   currentTurnIndex: 0,
@@ -125,6 +133,24 @@ export const initialRoomState: RoomState = {
 // =============================================================================
 
 type EventHandler<E extends RoomEvent> = (state: RoomState, event: E) => RoomState;
+
+/**
+ * Handle RoomInitialized - room created with seed data.
+ * Persists room metadata (seedPrompt, topic, level) that survives refresh.
+ * @see docs/ARCHITECTURE.md - Events section
+ */
+const handleRoomInitialized: EventHandler<Extract<RoomEvent, { type: "RoomInitialized" }>> = (
+  state,
+  event
+) => ({
+  ...state,
+  roomId: event.roomId,
+  scenarioId: event.scenarioId,
+  seedPrompt: event.seedPrompt,
+  topic: event.topic,
+  level: event.level,
+  status: "playing"
+});
 
 /**
  * Handle RoomSnapshot - initializes or rehydrates full room state.
@@ -300,6 +326,8 @@ const handleTurnAdvanced: EventHandler<Extract<RoomEvent, { type: "TurnAdvanced"
  */
 export const reduceRoomEvent = (state: RoomState, event: RoomEvent): RoomState => {
   switch (event.type) {
+    case "RoomInitialized":
+      return handleRoomInitialized(state, event);
     case "RoomSnapshot":
       return handleRoomSnapshot(state, event);
     case "TurnAccepted":

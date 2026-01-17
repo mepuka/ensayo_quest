@@ -43,6 +43,10 @@ const makeTestDb = (overrides: Partial<DbService> = {}): DbService => ({
   isMessageProcessed: () => Effect.succeed(false),
   markMessageProcessed: () => Effect.void,
   cleanupOldProcessedMessages: () => Effect.void,
+  // Room request idempotency (Architecture Invariant #10)
+  getRoomByRequestId: () => Effect.succeed(null),
+  recordRoomRequest: () => Effect.void,
+  // Turn request idempotency
   getTurnByRequestId: () => Effect.succeed(null),
   recordTurnRequest: () => Effect.void,
   // Audio upload idempotency

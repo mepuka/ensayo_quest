@@ -65,6 +65,9 @@ it.skip("emits ScoreUpdated with language review feedback", async () => {
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,
     cleanupOldProcessedMessages: () => Effect.void,
+    // Room request idempotency (Architecture Invariant #10)
+    getRoomByRequestId: () => Effect.succeed(null),
+    recordRoomRequest: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
     recordTurnRequest: () => Effect.void,
     getAudioUploadByTurnId: () => Effect.succeed({ audioKey: "turns/t1", requestId: "req-1" }),

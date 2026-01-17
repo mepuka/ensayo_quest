@@ -7,7 +7,7 @@ import { AudioBucket } from "../services/CloudflareLayers";
 import { RoomIdGenerator } from "../services/RoomIdGenerator";
 import { Turnstile } from "../security/Turnstile";
 import { RoomDoClient } from "../services/RoomDoClient";
-import { TurnAccepted, AudioUploaded } from "../domain/RoomProtocol";
+import { TurnAccepted, AudioUploaded, RoomInitialized } from "../domain/RoomProtocol";
 
 export class InvalidTurnSubmission extends Schema.TaggedError<InvalidTurnSubmission>()(
   "InvalidTurnSubmission",
@@ -44,19 +44,75 @@ export const validateTurnSubmission = (input: unknown) =>
       })
   });
 
+/**
+ * Create a room with idempotency support.
+ *
+ * Uses atomicity gap recovery pattern: ALWAYS re-emit RoomInitialized event on retry.
+ * The DO handler has its own idempotency guard to prevent duplicate state creation.
+ *
+ * @see docs/ARCHITECTURE.md - Invariant #10: Room creation idempotent via requestId
+ */
 export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
+  requestId: string;
   topic: string;
   level: string;
   mode: string;
 }) {
   const db = yield* Db;
+  const roomDo = yield* RoomDoClient;
   const generator = yield* RoomIdGenerator;
+
+  // Idempotency check - get cached roomId if request already processed
+  const existingRoomId = yield* db.getRoomByRequestId(input.requestId);
+
+  if (existingRoomId) {
+    // Atomicity gap recovery: ALWAYS re-emit event on retry
+    // (same pattern as uploadTurnAudio - DB succeeded but DO might have failed)
+    // DO handler has its own idempotency guard
+    const templateId = yield* db.getRoomTemplateId(existingRoomId);
+    const template = yield* db.getScenarioTemplate(templateId);
+
+    // STRICT IDEMPOTENCY: Use template's canonical topic/level, NOT input
+    // First request "wins" - subsequent retries with same requestId get identical result
+    yield* roomDo.emitRoomEvent(
+      existingRoomId,
+      new RoomInitialized({
+        type: "RoomInitialized",
+        roomId: existingRoomId,
+        scenarioId: templateId,
+        seedPrompt: template.seedPrompt,
+        topic: template.topic,
+        level: template.level,
+        timestamp: Date.now()
+      })
+    );
+
+    return { roomId: existingRoomId, seedPrompt: template.seedPrompt };
+  }
+
+  // First request - create room
   const roomId = yield* generator.generate;
   const template = yield* db.findScenarioTemplate({
     topic: input.topic,
     level: input.level
   });
   yield* db.createRoom(roomId, template.templateId);
+  yield* db.recordRoomRequest(input.requestId, roomId);
+
+  // Emit RoomInitialized event
+  yield* roomDo.emitRoomEvent(
+    roomId,
+    new RoomInitialized({
+      type: "RoomInitialized",
+      roomId,
+      scenarioId: template.templateId,
+      seedPrompt: template.seedPrompt,
+      topic: input.topic,
+      level: input.level,
+      timestamp: Date.now()
+    })
+  );
+
   return { roomId, seedPrompt: template.seedPrompt };
 });
 

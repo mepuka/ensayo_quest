@@ -2,65 +2,81 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { useAtomSet, useAtomValue, Result } from "@effect-atom/atom-react";
 import { Effect, Fiber } from "effect";
-import * as Schema from "effect/Schema";
 import type { RuntimeFiber } from "effect/Fiber";
 import * as Option from "effect/Option";
 
-// =============================================================================
-// API Response Schemas (runtime validation)
-// =============================================================================
-
-const CreateRoomResponse = Schema.Struct({
-  roomId: Schema.String,
-  wsUrl: Schema.optional(Schema.String), // May be present but not used
-  seedPrompt: Schema.String
-});
-const decodeCreateRoomResponse = Schema.decodeUnknownSync(CreateRoomResponse);
-
-const SubmitTurnResponse = Schema.Struct({
-  turnId: Schema.String,
-  status: Schema.String
-});
-const decodeSubmitTurnResponse = Schema.decodeUnknownSync(SubmitTurnResponse);
 import { ScorePanel } from "./components/ScorePanel";
-import { roomIdAtom, scorePanelAtom } from "./eventlog/RoomEventAtoms";
-import { initialScorePanelState } from "./eventlog/RoomEventReducer";
-import type { ASRResult } from "./asr/types";
+import { roomIdAtom, roomStateAtom } from "./eventlog/RoomEventAtoms";
+import { initialRoomState, deriveScorePanelState } from "./eventlog/RoomEventReducer";
 import { encodeWav } from "./asr/wav";
 import {
   asrStateAtom,
+  asrResultAtom,
+  attachRequestId,
   getAsrService,
   localAsrAtom,
   reduceAsrState
 } from "./asr/AsrAtoms";
+import {
+  createRoomFn,
+  submitTurnFn,
+  uploadAudioFn,
+  type CreateRoomInput,
+  type SubmitTurnInput,
+  type UploadAudioInput
+} from "./http/HttpAtoms";
+
+// =============================================================================
+// Helper: Extract status from Result
+// =============================================================================
+
+type HttpStatus = "idle" | "pending" | "success" | "error";
+
+const getHttpStatus = <A, E>(result: Result.Result<A, E>): HttpStatus => {
+  // Waiting means in progress (either initial or refetching)
+  if (Result.isWaiting(result)) return "pending";
+  if (Result.isInitial(result)) return "idle";
+  if (Result.isSuccess(result)) return "success";
+  return "error";
+};
+
+const getHttpError = <A, E>(result: Result.Result<A, E>): E | null => {
+  const errorOption = Result.error(result);
+  return Option.getOrNull(errorOption);
+};
+
+// =============================================================================
+// Frontend Component
+// =============================================================================
 
 export const Frontend = () => {
+  // Event-sourced state (survives refresh)
   const roomId = useAtomValue(roomIdAtom);
-  const scorePanelResult = useAtomValue(scorePanelAtom);
-  const scorePanelState = Result.getOrElse(scorePanelResult, () =>
-    initialScorePanelState("unknown")
-  );
+  const roomStateResult = useAtomValue(roomStateAtom);
+  const roomState = Result.getOrElse(roomStateResult, () => initialRoomState);
+  const scorePanelState = deriveScorePanelState(roomState);
+
+  // ASR state
   const asrServiceResult = useAtomValue(localAsrAtom);
   const asrState = useAtomValue(asrStateAtom);
   const setAsrState = useAtomSet(asrStateAtom);
-  const [topic, setTopic] = React.useState("restaurant");
-  const [level, setLevel] = React.useState("A2");
-  const [seedPrompt, setSeedPrompt] = React.useState<string | null>(null);
-  const [roomStatus, setRoomStatus] = React.useState<
-    "idle" | "creating" | "ready" | "error"
-  >("idle");
-  const [roomError, setRoomError] = React.useState<string | null>(null);
-  const [submitStatus, setSubmitStatus] = React.useState<
-    "idle" | "submitting" | "submitted" | "error"
-  >("idle");
-  const [submitError, setSubmitError] = React.useState<string | null>(null);
-  const [uploadStatus, setUploadStatus] = React.useState<
-    "idle" | "uploading" | "uploaded" | "error"
-  >("idle");
-  const [uploadError, setUploadError] = React.useState<string | null>(null);
-  const [lastAsrResult, setLastAsrResult] = React.useState<ASRResult | null>(
-    null
-  );
+
+  // HTTP atoms - Result tracks loading/error states
+  const createRoomResult = useAtomValue(createRoomFn);
+  const createRoom = useAtomSet(createRoomFn);
+  const submitTurnResult = useAtomValue(submitTurnFn);
+  const submitTurn = useAtomSet(submitTurnFn);
+  const uploadAudioResult = useAtomValue(uploadAudioFn);
+  const uploadAudio = useAtomSet(uploadAudioFn);
+
+  // ASR result with attached requestId for idempotent submission
+  const lastAsrResult = useAtomValue(asrResultAtom);
+  const setAsrResult = useAtomSet(asrResultAtom);
+
+  // Transient form state (doesn't survive refresh - that's OK)
+  const [formTopic, setFormTopic] = React.useState("restaurant");
+  const [formLevel, setFormLevel] = React.useState("A2");
+
   // Track running ASR fibers for cleanup on unmount
   const asrFiberRef = React.useRef<RuntimeFiber<unknown, unknown> | null>(null);
   const isMountedRef = React.useRef(true);
@@ -78,92 +94,77 @@ export const Frontend = () => {
     };
   }, []);
 
+  // Derive values
   const activeRoomId = Option.isSome(roomId) ? roomId.value : "";
-  const updateRoomIdParam = (nextRoomId: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("roomId", nextRoomId);
-    window.history.replaceState({}, "", url.toString());
-    window.dispatchEvent(new PopStateEvent("popstate"));
+
+  // Use event-sourced values when available, form values otherwise
+  const displayTopic = roomState.topic ?? formTopic;
+  const displayLevel = roomState.level ?? formLevel;
+  const displaySeedPrompt = roomState.seedPrompt;
+
+  // HTTP status from atom Results
+  const createRoomStatus = getHttpStatus(createRoomResult);
+  const createRoomError = getHttpError(createRoomResult);
+  const submitTurnStatus = getHttpStatus(submitTurnResult);
+  const submitTurnError = getHttpError(submitTurnResult);
+  const uploadAudioStatus = getHttpStatus(uploadAudioResult);
+  const uploadAudioError = getHttpError(uploadAudioResult);
+
+  // =============================================================================
+  // Action Handlers
+  // =============================================================================
+
+  const runCreateRoom = () => {
+    // Generate requestId when user clicks button (Architecture Invariant #2)
+    const requestId = crypto.randomUUID();
+    const input: CreateRoomInput = {
+      requestId,
+      topic: formTopic,
+      level: formLevel,
+      mode: "practice"
+    };
+    createRoom(input);
+    // Note: URL update happens in createRoomFn via pushstate event
   };
-  const runCreateRoom = async () => {
-    setRoomStatus("creating");
-    setRoomError(null);
-    setSeedPrompt(null);
-    setUploadStatus("idle");
-    setUploadError(null);
-    try {
-      const response = await fetch("/api/rooms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, level, mode: "practice" })
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        setRoomStatus("error");
-        setRoomError(errorText || "create_room_failed");
-        return;
-      }
-      const json = await response.json();
-      const data = decodeCreateRoomResponse(json);
-      updateRoomIdParam(data.roomId);
-      setSeedPrompt(data.seedPrompt);
-      setRoomStatus("ready");
-    } catch (error) {
-      setRoomStatus("error");
-      setRoomError(String(error));
-    }
-  };
-  const runUploadAudio = async (turnId: string) => {
+
+  const runUploadAudio = (turnId: string) => {
     if (!lastAsrResult || lastAsrResult.audio.length === 0) {
       return;
     }
     if (!lastAsrResult.sampleRate) {
-      setUploadStatus("error");
-      setUploadError("missing_sample_rate");
       return;
     }
-    setUploadStatus("uploading");
-    setUploadError(null);
-    try {
-      const wav = encodeWav(lastAsrResult.audio, lastAsrResult.sampleRate);
-      const response = await fetch(`/api/turns/${turnId}/audio`, {
-        method: "POST",
-        headers: { "Content-Type": "audio/wav" },
-        body: wav
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        setUploadStatus("error");
-        setUploadError(errorText || "upload_failed");
-        return;
-      }
-      setUploadStatus("uploaded");
-    } catch (error) {
-      setUploadStatus("error");
-      setUploadError(String(error));
-    }
+    const wav = encodeWav(lastAsrResult.audio, lastAsrResult.sampleRate);
+    const input: UploadAudioInput = {
+      turnId,
+      roomId: activeRoomId,
+      // Use the requestId attached when ASR stopped (Architecture Invariant #2)
+      requestId: lastAsrResult.requestId,
+      audio: wav,
+      contentType: "audio/wav"
+    };
+    uploadAudio(input);
   };
-  const runSubmitTurn = async () => {
+
+  const runSubmitTurn = () => {
     const transcript = asrState.transcript.trim();
-    if (!activeRoomId) {
-      setSubmitStatus("error");
-      setSubmitError("missing_room_id");
+    if (!activeRoomId || !transcript || !lastAsrResult) {
       return;
     }
-    if (!transcript) {
-      setSubmitStatus("error");
-      setSubmitError("empty_transcript");
-      return;
-    }
-    setSubmitStatus("submitting");
-    setSubmitError(null);
-    const durationMs = lastAsrResult?.durationMs ?? 0;
+
+    // Use the requestId attached when ASR stopped (Architecture Invariant #2)
+    // This ensures idempotency: same ASR result → same requestId → same turn
+    const requestId = lastAsrResult.requestId;
+
+    const durationMs = lastAsrResult.durationMs;
     const words = transcript.split(/\s+/).filter(Boolean).length;
     const durationMinutes = durationMs > 0 ? durationMs / 60000 : 0;
     const speakingRateWpm =
       durationMinutes > 0 ? Math.round(words / durationMinutes) : 0;
-    const payload = {
+
+    const input: SubmitTurnInput = {
       roomId: activeRoomId,
+      requestId,
       transcript,
       language: "es",
       clientTimestamp: Date.now(),
@@ -174,27 +175,13 @@ export const Frontend = () => {
       },
       asrSource: "whisper-base"
     };
-    try {
-      const response = await fetch(`/api/rooms/${activeRoomId}/turns`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        setSubmitStatus("error");
-        setSubmitError(errorText || "submit_turn_failed");
-        return;
-      }
-      const json = await response.json();
-      const data = decodeSubmitTurnResponse(json);
-      setSubmitStatus("submitted");
-      void runUploadAudio(data.turnId);
-    } catch (error) {
-      setSubmitStatus("error");
-      setSubmitError(String(error));
-    }
+
+    submitTurn(input);
+
+    // TODO: Chain audio upload after submitTurn success via Result observation
+    // For now, audio upload must be triggered separately with the turnId from submitTurnResult
   };
+
   const runAsrStart = () => {
     const asr = getAsrService(asrServiceResult);
     if (!asr) {
@@ -242,11 +229,10 @@ export const Frontend = () => {
       Effect.tap((result) =>
         Effect.sync(() => {
           if (isMountedRef.current) {
-            setLastAsrResult(result);
-            setSubmitStatus("idle");
-            setSubmitError(null);
-            setUploadStatus("idle");
-            setUploadError(null);
+            // Attach requestId when ASR stops for idempotent turn submission
+            // (Architecture Invariant #2: All commands are idempotent via requestId)
+            const resultWithId = attachRequestId(result);
+            setAsrResult(resultWithId);
             setAsrState((current) =>
               reduceAsrState(current, { type: "stop", transcript: result.transcript })
             );
@@ -265,6 +251,11 @@ export const Frontend = () => {
     );
     asrFiberRef.current = Effect.runFork(program);
   };
+
+  // =============================================================================
+  // Render
+  // =============================================================================
+
   return (
     <main>
       <h1>Ensayo Quest</h1>
@@ -273,26 +264,33 @@ export const Frontend = () => {
         <label>
           Topic
           <input
-            value={topic}
-            onChange={(event) => setTopic(event.target.value)}
+            value={formTopic}
+            onChange={(event) => setFormTopic(event.target.value)}
             placeholder="restaurant"
           />
         </label>
         <label>
           Level
           <input
-            value={level}
-            onChange={(event) => setLevel(event.target.value)}
+            value={formLevel}
+            onChange={(event) => setFormLevel(event.target.value)}
             placeholder="A2"
           />
         </label>
-        <button type="button" onClick={() => void runCreateRoom()}>
+        <button type="button" onClick={runCreateRoom}>
           Create Room
         </button>
-        {roomStatus === "creating" ? <p>Creating room...</p> : null}
-        {roomStatus === "error" && roomError ? <p data-status="error">{roomError}</p> : null}
+        {createRoomStatus === "pending" ? <p>Creating room...</p> : null}
+        {createRoomStatus === "error" && createRoomError ? (
+          <p data-status="error">{String(createRoomError)}</p>
+        ) : null}
         {activeRoomId ? <p>Room: {activeRoomId}</p> : null}
-        {seedPrompt ? <p>Seed prompt: {seedPrompt}</p> : null}
+        {displaySeedPrompt ? <p>Seed prompt: {displaySeedPrompt}</p> : null}
+        {activeRoomId ? (
+          <p>
+            Topic: {displayTopic} | Level: {displayLevel}
+          </p>
+        ) : null}
       </section>
       <ScorePanel
         turnId={scorePanelState.turnId}
@@ -305,22 +303,22 @@ export const Frontend = () => {
         {asrState.error ? <p data-asr-error>{asrState.error}</p> : null}
         <p>{asrState.transcript || "No transcript yet."}</p>
       </section>
-      <button type="button" onClick={() => void runAsrStart()}>
+      <button type="button" onClick={runAsrStart}>
         Start ASR
       </button>
-      <button type="button" onClick={() => void runAsrStop()}>
+      <button type="button" onClick={runAsrStop}>
         Stop ASR
       </button>
-      <button type="button" onClick={() => void runSubmitTurn()}>
+      <button type="button" onClick={runSubmitTurn}>
         Submit Turn
       </button>
-      {submitStatus === "submitting" ? <p>Submitting turn...</p> : null}
-      {submitStatus === "error" && submitError ? (
-        <p data-status="error">{submitError}</p>
+      {submitTurnStatus === "pending" ? <p>Submitting turn...</p> : null}
+      {submitTurnStatus === "error" && submitTurnError ? (
+        <p data-status="error">{String(submitTurnError)}</p>
       ) : null}
-      {uploadStatus === "uploading" ? <p>Uploading audio...</p> : null}
-      {uploadStatus === "error" && uploadError ? (
-        <p data-status="error">{uploadError}</p>
+      {uploadAudioStatus === "pending" ? <p>Uploading audio...</p> : null}
+      {uploadAudioStatus === "error" && uploadAudioError ? (
+        <p data-status="error">{String(uploadAudioError)}</p>
       ) : null}
     </main>
   );

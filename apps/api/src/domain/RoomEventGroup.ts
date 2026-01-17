@@ -97,6 +97,23 @@ export class RoomErrorPayload extends Schema.Class<RoomErrorPayload>("RoomErrorP
 }) {}
 
 /**
+ * RoomInitialized - Emitted when a room is created.
+ *
+ * Persists room metadata (seedPrompt, topic, level) to EventLog.
+ * This data survives page refresh and is the source of truth for room configuration.
+ *
+ * @see docs/ARCHITECTURE.md - Events section, Invariant #10
+ */
+export class RoomInitializedPayload extends Schema.Class<RoomInitializedPayload>("RoomInitializedPayload")({
+  roomId: Schema.String,
+  scenarioId: Schema.String,
+  seedPrompt: Schema.String,
+  topic: Schema.String,
+  level: Schema.String,
+  timestamp: Schema.Number
+}) {}
+
+/**
  * AudioUploaded - Emitted when audio for a turn has been uploaded to R2.
  *
  * This event gates the scoring pipeline - scoring can only begin after audio exists.
@@ -129,6 +146,13 @@ export class AudioUploadedPayload extends Schema.Class<AudioUploadedPayload>("Au
  * - error: what errors the handler can produce
  */
 export const RoomEventGroup = EventGroup.empty
+  .add({
+    tag: "RoomInitialized",
+    primaryKey: (payload: RoomInitializedPayload) => payload.roomId,
+    payload: RoomInitializedPayload,
+    success: Schema.Void,
+    error: RoomEventHandlerError
+  })
   .add({
     tag: "TurnAccepted",
     primaryKey: (payload: TurnAcceptedPayload) => payload.roomId,

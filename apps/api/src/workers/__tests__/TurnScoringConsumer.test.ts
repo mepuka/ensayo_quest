@@ -77,6 +77,9 @@ it("scores turn and emits ScoreUpdated", async () => {
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,
     cleanupOldProcessedMessages: () => Effect.void,
+    // Room request idempotency (Architecture Invariant #10)
+    getRoomByRequestId: () => Effect.succeed(null),
+    recordRoomRequest: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
     recordTurnRequest: () => Effect.void,
     getAudioUploadByTurnId: () => Effect.succeed({ audioKey: "turns/t1", requestId: "req-1" }),
@@ -172,6 +175,9 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,
     cleanupOldProcessedMessages: () => Effect.void,
+    // Room request idempotency (Architecture Invariant #10)
+    getRoomByRequestId: () => Effect.succeed(null),
+    recordRoomRequest: () => Effect.void,
     getTurnByRequestId: () => Effect.succeed(null),
     recordTurnRequest: () => Effect.void,
     // No audio upload exists - this should trigger the defense in depth skip

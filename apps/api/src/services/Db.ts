@@ -28,6 +28,10 @@ export interface DbService {
   isMessageProcessed: (messageId: string) => Effect.Effect<boolean, DbError, never>;
   markMessageProcessed: (messageId: string) => Effect.Effect<void, DbError, never>;
   cleanupOldProcessedMessages: (olderThanMs: number) => Effect.Effect<void, DbError, never>;
+  // Room request idempotency (Architecture Invariant #10)
+  // @see docs/ARCHITECTURE.md - Invariant #10: Room creation idempotent via requestId
+  getRoomByRequestId: (requestId: string) => Effect.Effect<string | null, DbError, never>;
+  recordRoomRequest: (requestId: string, roomId: string) => Effect.Effect<void, DbError, never>;
   // Turn request idempotency (Architecture Invariant #2)
   getTurnByRequestId: (roomId: string, requestId: string) => Effect.Effect<string | null, DbError, never>;
   recordTurnRequest: (roomId: string, requestId: string, turnId: string) => Effect.Effect<void, DbError, never>;
@@ -229,6 +233,21 @@ export const DbLive = Layer.effect(
         run(queries.markMessageProcessed, [messageId, Date.now()]),
       cleanupOldProcessedMessages: (olderThanMs: number) =>
         run(queries.cleanupOldProcessedMessages, [Date.now() - olderThanMs]),
+      // Room request idempotency (Architecture Invariant #10)
+      // @see docs/ARCHITECTURE.md - Invariant #10: Room creation idempotent via requestId
+      getRoomByRequestId: (requestId: string) =>
+        Effect.tryPromise({
+          try: () => env.DB.prepare(queries.getRoomByRequestId).bind(requestId).first(),
+          catch: (cause) => new DbError({ reason: String(cause) })
+        }).pipe(
+          Effect.map((row) => {
+            if (!row) return null;
+            const record = row as Record<string, unknown>;
+            return String(record.room_id ?? "");
+          })
+        ),
+      recordRoomRequest: (requestId: string, roomId: string) =>
+        run(queries.recordRoomRequest, [requestId, roomId, Date.now()]),
       // Turn request idempotency (Architecture Invariant #2)
       getTurnByRequestId: (roomId: string, requestId: string) =>
         Effect.tryPromise({

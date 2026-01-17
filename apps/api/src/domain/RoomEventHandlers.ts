@@ -14,6 +14,7 @@ import { TurnQueue } from "../services/TurnQueue.js";
 import {
   RoomEventGroup,
   RoomEventHandlerError,
+  type RoomInitializedPayload,
   type TurnAcceptedPayload,
   type ScoreUpdatedPayload,
   type NpcTurnGeneratedPayload,
@@ -631,6 +632,34 @@ export const RoomEventHandlersLive = EventLog.group(
   RoomEventGroup,
   (handlers) =>
     handlers
+      .handle("RoomInitialized", Effect.fn("RoomEventHandlers.RoomInitialized")(function* ({ payload, entry }) {
+        const persistence = yield* RoomStatePersistence;
+
+        // Idempotency: Check if state already exists (handles retry after DO emit failure)
+        // This is the atomicity gap recovery pattern from uploadTurnAudio
+        const existing = yield* persistence.getState(payload.roomId);
+        if (existing) {
+          yield* Effect.logDebug(`RoomInitialized already processed for room ${payload.roomId}, skipping`);
+          return;
+        }
+
+        // RoomInitialized creates initial room state
+        // NOTE: Room metadata (seedPrompt, topic, level) stays in event, NOT in RoomProjection
+        const newState = new RoomProjection({
+          roomId: payload.roomId,
+          state: new AwaitingTurnState({
+            _tag: "AwaitingTurn",
+            participant: new ParticipantPlayer({ _tag: "Player", playerId: "" }),
+            stepIndex: 0
+          }),
+          participants: new RoomParticipants({ roomId: payload.roomId, sessions: [] }),
+          currentStepIndex: 0,
+          lastEventId: entry.idString,
+          updatedAt: payload.timestamp
+        });
+
+        yield* persistence.upsertState(payload.roomId, newState);
+      }))
       .handle("TurnAccepted", Effect.fn("RoomEventHandlers.TurnAccepted")(function* ({ payload, entry }) {
         const persistence = yield* RoomStatePersistence;
         const current = yield* loadOrCreateState(payload.roomId, payload.timestamp);

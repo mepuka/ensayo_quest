@@ -1,6 +1,8 @@
 import * as Schema from "effect/Schema";
 
 export class CreateRoomRequest extends Schema.Class<CreateRoomRequest>("CreateRoomRequest")({
+  /** Client-generated unique ID for idempotency. Required for retry safety. */
+  requestId: Schema.String,
   topic: Schema.String,
   level: Schema.String,
   mode: Schema.String

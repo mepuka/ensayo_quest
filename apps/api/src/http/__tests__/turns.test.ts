@@ -11,11 +11,12 @@ it("rejects invalid TurnSubmission", () => {
   expect(result._tag).toBe("Left");
 });
 
-it("createRoom selects a scenario and returns its seed prompt", async () => {
+it("createRoom selects a scenario, emits RoomInitialized, and returns its seed prompt", async () => {
   let createdId = "";
   let createdTemplate = "";
+  let emittedEvent: unknown = null;
   const result = await Effect.runPromise(
-    createRoom({ topic: "travel", level: "A1", mode: "solo" }).pipe(
+    createRoom({ requestId: "req-1", topic: "travel", level: "A1", mode: "solo" }).pipe(
       Effect.provideService(Db, {
         createRoom: (roomId, templateId) =>
           Effect.sync(() => {
@@ -58,6 +59,9 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
         isMessageProcessed: () => Effect.succeed(false),
         markMessageProcessed: () => Effect.void,
         cleanupOldProcessedMessages: () => Effect.void,
+        // Room request idempotency (Architecture Invariant #10)
+        getRoomByRequestId: () => Effect.succeed(null),
+        recordRoomRequest: () => Effect.void,
         getTurnByRequestId: () => Effect.succeed(null),
         recordTurnRequest: () => Effect.void,
         getAudioUploadByTurnId: () => Effect.succeed(null),
@@ -67,6 +71,12 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
       }),
       Effect.provideService(RoomIdGenerator, {
         generate: Effect.sync(() => "room-1")
+      }),
+      Effect.provideService(RoomDoClient, {
+        emitRoomEvent: (_roomId, event) =>
+          Effect.sync(() => {
+            emittedEvent = event;
+          })
       })
     )
   );
@@ -74,6 +84,8 @@ it("createRoom selects a scenario and returns its seed prompt", async () => {
   expect(result.seedPrompt).toBe("Bienvenido");
   expect(createdId).toBe("room-1");
   expect(createdTemplate).toBe("template-1");
+  expect(emittedEvent).not.toBeNull();
+  expect((emittedEvent as { type: string }).type).toBe("RoomInitialized");
 });
 
 /**
@@ -139,6 +151,9 @@ it("submitTurn records turn and emits TurnAccepted (without enqueuing scoring)",
         isMessageProcessed: () => Effect.succeed(false),
         markMessageProcessed: () => Effect.void,
         cleanupOldProcessedMessages: () => Effect.void,
+        // Room request idempotency (Architecture Invariant #10)
+        getRoomByRequestId: () => Effect.succeed(null),
+        recordRoomRequest: () => Effect.void,
         getTurnByRequestId: () => Effect.succeed(null),
         recordTurnRequest: () => Effect.void,
         getAudioUploadByTurnId: () => Effect.succeed(null),
@@ -227,6 +242,9 @@ it("submitTurn rejects when Turnstile check fails", async () => {
           isMessageProcessed: () => Effect.succeed(false),
           markMessageProcessed: () => Effect.void,
           cleanupOldProcessedMessages: () => Effect.void,
+          // Room request idempotency (Architecture Invariant #10)
+          getRoomByRequestId: () => Effect.succeed(null),
+          recordRoomRequest: () => Effect.void,
           getTurnByRequestId: () => Effect.succeed(null),
           recordTurnRequest: () => Effect.void,
           getAudioUploadByTurnId: () => Effect.succeed(null),

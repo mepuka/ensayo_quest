@@ -18,6 +18,7 @@ import { Layer, Effect } from "effect";
 export {
   RoomEventGroup,
   RoomEventHandlerError,
+  RoomInitializedPayload,
   TurnAcceptedPayload,
   ScoreUpdatedPayload,
   NpcTurnGeneratedPayload,

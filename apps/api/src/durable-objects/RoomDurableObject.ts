@@ -28,6 +28,7 @@ import {
   RoomDomainLive,
   RoomEventSchema,
   RoomEventHandlerError,
+  RoomInitializedPayload,
   TurnAcceptedPayload,
   TurnAdvancedPayload,
   ScoreUpdatedPayload,
@@ -115,6 +116,22 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
   const timestamp = Date.now();
 
   switch (event.type) {
+    case "RoomInitialized": {
+      yield* log.write({
+        schema: RoomEventSchema,
+        event: "RoomInitialized",
+        payload: new RoomInitializedPayload({
+          roomId: event.roomId,
+          scenarioId: event.scenarioId,
+          seedPrompt: event.seedPrompt,
+          topic: event.topic,
+          level: event.level,
+          timestamp
+        })
+      });
+      break;
+    }
+
     case "TurnAccepted": {
       // Get current state to determine step indices
       const currentState = yield* persistence.getState(roomId);

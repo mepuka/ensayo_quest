@@ -29,6 +29,12 @@ export const queries = {
     "SELECT turn_id FROM turn_requests WHERE room_id = ? AND request_id = ?",
   recordTurnRequest:
     "INSERT INTO turn_requests (room_id, request_id, turn_id, created_at) VALUES (?, ?, ?, ?)",
+  // Room request idempotency (Architecture Invariant #10)
+  // @see docs/ARCHITECTURE.md - Invariant #10: Room creation idempotent via requestId
+  getRoomByRequestId:
+    "SELECT room_id FROM room_requests WHERE request_id = ?",
+  recordRoomRequest:
+    "INSERT INTO room_requests (request_id, room_id, created_at) VALUES (?, ?, ?)",
   // Audio upload idempotency (Architecture Invariant #2, #9)
   // @see docs/plans/2026-01-16-frontend-voice-stack-design.md - Section 5
   getAudioUploadByTurnId:

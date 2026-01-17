@@ -89,6 +89,27 @@ Web Client (Browser)
 
 ---
 
+## Events
+
+Room state is derived from these events via the EventLog:
+
+| Event | Purpose | Payload |
+| ----- | ------- | ------- |
+| **RoomInitialized** | Room creation with seed data | roomId, scenarioId, seedPrompt, topic, level, timestamp |
+| **TurnAccepted** | Player turn recorded | roomId, turnId, playerId, transcript, timestamp |
+| **ScoreUpdated** | Turn scoring completed | roomId, turnId, scores, feedback, nextPrompt |
+| **NpcTurnGenerated** | NPC response created | roomId, turnId, npcId, content, stepIndex, timestamp |
+| **TurnAdvanced** | Turn progression | roomId, fromStepIndex, toStepIndex, nextParticipantType/Id |
+| **PlayerJoined** | Player connected | roomId, playerId, sessionId, timestamp |
+| **PlayerDisconnected** | Player disconnected | roomId, playerId, sessionId, timestamp |
+| **RoomCompleted** | Session finished | roomId, summary, timestamp |
+| **RoomError** | Error occurred | roomId, code, message, retryable, timestamp |
+| **AudioUploaded** | Audio uploaded to R2 | roomId, turnId, audioKey, requestId, fileSizeBytes, timestamp |
+
+**Note:** `RoomInitialized` persists room metadata (seedPrompt, topic, level) to EventLog. This data survives page refresh and is the source of truth for room configuration. `RoomProjection` contains only game state (whose turn, step index), not room metadata.
+
+---
+
 ## Key Invariants
 
 These are **non-negotiable** architectural rules. Any code change that violates these must be flagged.
@@ -104,6 +125,7 @@ These are **non-negotiable** architectural rules. Any code change that violates 
 | 7   | **WebSocket handlers validate session**     | Every message must have valid sessionId                      |
 | 8   | **Participant membership tracked in state** | RoomParticipants with expected + active participants         |
 | 9   | **Scoring enqueue gated on AudioUploaded**  | Queue consumer needs audio from R2; prevents race condition  |
+| 10  | **Room creation idempotent via requestId**  | D1 table + re-emit pattern for atomicity gap recovery        |
 
 ---
 
@@ -248,4 +270,6 @@ See `docs/plans/2026-01-16-multiplayer-architecture-design.md` for full remediat
 | 2026-01-16 | Added validated issues          | Deep dive investigation                    |
 | 2026-01-16 | Clarified scoring runtime       | Scoring in Queue Consumer, not DO          |
 | 2026-01-16 | Clarified Processing state      | Transient state, does not wait for scoring |
-| 2026-01-16 | Moved scoring enqueue to AudioUploaded | Fixes race condition; audio must exist before scoring |
+| 2026-01-16 | Moved scoring enqueue to AudioUploaded      | Fixes race condition; audio must exist before scoring |
+| 2026-01-16 | Added Events section + RoomInitialized      | Frontend state consolidation - persist room metadata  |
+| 2026-01-16 | Added Invariant #10 (room creation idempotency) | createRoom now requires requestId for retry safety |
