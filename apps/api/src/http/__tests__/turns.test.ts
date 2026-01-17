@@ -334,7 +334,8 @@ it("submitTurn rejects when Turnstile check fails", async () => {
           getAudioUploadByTurnId: () => Effect.succeed(null),
           getAudioUploadByRequestId: () => Effect.succeed(null),
           recordAudioUpload: () => Effect.void,
-          recordAudioUploadRequest: () => Effect.void
+          recordAudioUploadRequest: () => Effect.void,
+          insertScenarioTemplate: () => Effect.void
         }),
         // NOTE: TurnQueue is NOT needed - scoring is enqueued by AudioUploaded handler
         Effect.provideService(RoomDoClient, {

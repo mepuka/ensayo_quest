@@ -38,5 +38,5 @@
       }
     ]
   },
-  "exclude": ["effect/**", "effect-atom/**", "node_modules/**"]
+  "exclude": ["effect/**", "effect-atom/**", "node_modules/**", "scripts/**"]
 }
