@@ -167,8 +167,8 @@ jobs:
       - name: Apply seed data (staging)
         working-directory: apps/api
         run: |
-          set -o pipefail
-          bun run scripts/generate-seed-sql.ts | wrangler d1 execute DB --env staging --remote --file=-
+          bun run scripts/generate-seed-sql.ts > /tmp/seed.sql
+          wrangler d1 execute DB --env staging --remote --file=/tmp/seed.sql
 
       # Deploy Workers (staging)
       - name: Deploy Workers (staging)
@@ -231,8 +231,8 @@ jobs:
       - name: Apply seed data (production)
         working-directory: apps/api
         run: |
-          set -o pipefail
-          bun run scripts/generate-seed-sql.ts | wrangler d1 execute DB --env production --remote --file=-
+          bun run scripts/generate-seed-sql.ts > /tmp/seed.sql
+          wrangler d1 execute DB --env production --remote --file=/tmp/seed.sql
 
       # Deploy Workers (production)
       - name: Deploy Workers (production)
