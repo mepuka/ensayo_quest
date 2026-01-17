@@ -240,9 +240,6 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
         break;
       }
 
-      // Record idempotency BEFORE writing to EventLog
-      yield* turnIdempotency.recordAccepted(event.turnId, roomId);
-
       // Get current state to determine step indices
       const currentState = yield* persistence.getState(roomId);
       const currentStepIndex = currentState?.currentStepIndex ?? 0;
@@ -273,6 +270,11 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
           nextParticipantId: "unknown" // TODO: Get next player from scenario
         })
       });
+
+      // Record idempotency AFTER EventLog writes succeed (P1-02 fix)
+      // This ensures retries can proceed if writes fail
+      // Architecture Invariant #3: no separate persist calls before atomic journal writes
+      yield* turnIdempotency.recordAccepted(event.turnId, roomId);
       break;
     }
 
