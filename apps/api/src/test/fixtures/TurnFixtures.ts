@@ -194,10 +194,14 @@ export const TurnSubmissionFixtures = {
 // QueueJob Fixtures
 // =============================================================================
 
-const QueueJobDefaults = {
+const QueueJobDefaults: {
+  roomId: string;
+  turnId: string;
+  status: "partial" | "final";
+} = {
   roomId: "room-test",
   turnId: "turn-test",
-  status: "final" as const
+  status: "final"
 };
 
 export const QueueJobFixtures = {

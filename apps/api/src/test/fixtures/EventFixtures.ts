@@ -157,6 +157,7 @@ const AudioUploadedDefaults = {
   audioKey: "turns/turn-test/audio.webm",
   requestId: "req-test",
   fileSizeBytes: 15000,
+  durationMs: undefined as number | undefined,
   timestamp: now()
 };
 
@@ -222,11 +223,17 @@ export const NpcTurnGeneratedFixtures = {
 // TurnAdvanced Fixtures
 // =============================================================================
 
-const TurnAdvancedDefaults = {
+const TurnAdvancedDefaults: {
+  roomId: string;
+  fromStepIndex: number;
+  toStepIndex: number;
+  nextParticipantType: "Player" | "NPC";
+  nextParticipantId: string;
+} = {
   roomId: "room-test",
   fromStepIndex: 0,
   toStepIndex: 1,
-  nextParticipantType: "NPC" as const,
+  nextParticipantType: "NPC",
   nextParticipantId: "npc-guide"
 };
 

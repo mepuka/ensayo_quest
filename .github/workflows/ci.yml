@@ -21,12 +21,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Log versions
+        run: |
+          echo "Node: $(node -v)"
+          echo "Bun: $(bun -v)"
+          echo "TypeScript: $(node -p "require('typescript').version")"
 
       - name: Typecheck
         run: bun run typecheck

@@ -12,10 +12,15 @@ import { RoleRubric } from "../../domain/RoleRubric";
 // TurnPlan Fixtures
 // =============================================================================
 
-const TurnPlanDefaults = {
+const TurnPlanDefaults: {
+  turnIndex: number;
+  speakerRole: string;
+  promptType: "user" | "model";
+  objectiveIds: string[];
+} = {
   turnIndex: 0,
   speakerRole: "A",
-  promptType: "user" as const,
+  promptType: "user",
   objectiveIds: ["obj-1"]
 };
 
@@ -235,10 +240,20 @@ export const ScenarioFixtures = {
   // -------------------------------------------------------------------------
 
   forTopicLevel: (topic: string, level: string): ScenarioTemplate => {
-    const key = `${topic}${level}` as keyof typeof ScenarioFixtures;
-    const preset = ScenarioFixtures[key];
-    if (typeof preset === "function") {
-      return preset() as ScenarioTemplate;
+    const presets: Record<string, (() => ScenarioTemplate) | undefined> = {
+      travelA1: ScenarioFixtures.travelA1,
+      travelA2: ScenarioFixtures.travelA2,
+      foodA1: ScenarioFixtures.foodA1,
+      foodA2: ScenarioFixtures.foodA2,
+      workA1: ScenarioFixtures.workA1,
+      workA2: ScenarioFixtures.workA2,
+      hobbiesA1: ScenarioFixtures.hobbiesA1,
+      hobbiesA2: ScenarioFixtures.hobbiesA2
+    };
+    const key = `${topic}${level}`;
+    const preset = presets[key];
+    if (preset) {
+      return preset();
     }
     // Fallback to defaults with the requested topic/level
     return ScenarioFixtures.make({

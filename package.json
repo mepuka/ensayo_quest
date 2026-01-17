@@ -8,7 +8,7 @@
     "prepare": "effect-language-service patch",
     "test": "bun test apps",
     "test:integration": "vitest run --config apps/api/vitest.integration.config.ts",
-    "typecheck": "node --stack-size=16384 ./node_modules/typescript/bin/tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "dev:web": "vite apps/web"
   },
   "devDependencies": {
