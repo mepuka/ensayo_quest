@@ -11,7 +11,7 @@ import type { SqlStorage } from "@cloudflare/workers-types";
 import { EventLogDurableObject } from "@effect/experimental/EventLogServer/Cloudflare";
 import * as EventLog from "@effect/experimental/EventLog";
 import { Env, type CloudflareEnv } from "../services/Env.js";
-import { makeDoSqliteEventLogStorageLayer } from "./EventLogStorage";
+import { makeDoSqliteEventLogRuntimeLayer } from "./EventLogStorage";
 import { decodeRoomEventEnvelopeMsgPack, type RoomEvent } from "../domain/RoomProtocol";
 import { SqliteClient as DoSqliteClient } from "@effect/sql-sqlite-do";
 import { layerConfig as DoSqliteNoTxLayerConfig } from "./db/DoSqliteClientNoTx";
@@ -46,7 +46,7 @@ import { TurnQueueLive } from "../services/TurnQueue.js";
 import { EventJournalError, RemoteId, Entry, makeEntryId } from "@effect/experimental/EventJournal";
 import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
-import { EventLogEncryption, EncryptedRemoteEntry } from "@effect/experimental/EventLogEncryption";
+import { EventLogEncryption, EncryptedRemoteEntry, layerSubtle as EventLogEncryptionLayer } from "@effect/experimental/EventLogEncryption";
 import * as Redacted from "effect/Redacted";
 import { encodeRoomEventMsgPack } from "../domain/RoomProtocol";
 
@@ -272,7 +272,8 @@ export class RoomDurableObject extends EventLogDurableObject {
     super({
       ctx: state,
       env,
-      storageLayer: makeDoSqliteEventLogStorageLayer(storage).pipe(Layer.orDie)
+      // Use runtime layer that includes EventLogEncryption for broadcast functionality
+      storageLayer: makeDoSqliteEventLogRuntimeLayer(storage).pipe(Layer.orDie)
     });
 
     // Store room ID from DO state
@@ -366,18 +367,25 @@ export class RoomDurableObject extends EventLogDurableObject {
 
         // Send to all connected WebSockets
         for (const ws of webSockets) {
-          try {
-            ws.send(changes);
-          } catch (e) {
-            yield* Effect.logWarning("Failed to send to WebSocket", { error: String(e) });
-          }
+          yield* Effect.try({
+            try: () => ws.send(changes),
+            catch: () => undefined // Ignore send failures, log below
+          }).pipe(
+            Effect.tapError(() =>
+              Effect.logWarning("Failed to send to WebSocket")
+            ),
+            Effect.ignore
+          );
         }
 
         yield* Effect.logInfo("Broadcast complete", {
           eventType: event.type,
           clientCount: webSockets.length
         });
-      }).pipe(Effect.catchAllCause(Effect.logError))
+      }).pipe(
+        Effect.provide(EventLogEncryptionLayer),
+        Effect.catchAllCause(Effect.logError)
+      )
     );
   }
 
