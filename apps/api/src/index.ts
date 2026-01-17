@@ -13,7 +13,7 @@ import { RoomIdGeneratorLive } from "./services/RoomIdGenerator";
 import { TurnstileLive } from "./security/Turnstile";
 import { ScoringConfigLive, ScoringServiceLive } from "./services/ScoringService";
 import { AudioBucketLive } from "./services/CloudflareLayers";
-import { LanguageReviewGoogleLive } from "./services/LanguageReviewGoogle";
+import { LanguageReviewConfigurable } from "./services/LanguageReviewFactory";
 import { makeTurnScoringConsumer } from "./workers/TurnScoringConsumer";
 import { Db } from "./services/Db";
 import { RoomDurableObject } from "./durable-objects/RoomDurableObject";
@@ -82,14 +82,20 @@ const makeHttpLayer = (env: CloudflareEnv) => {
 
 /**
  * Full layer for queue consumer (includes scoring + language review).
- * LanguageReview requires GOOGLE_AI_API_KEY secret.
+ *
+ * LanguageReview mode is config-driven via LANGUAGE_REVIEW_MODE env var:
+ * - "google" (default): Uses Google Gemini API (requires GOOGLE_AI_API_KEY)
+ * - "mock": Uses deterministic mock responses (for integration tests)
+ * - "disabled": Returns errors (scoring uses fallback logic)
+ *
+ * @see LanguageReviewFactory.ts for the idiomatic Effect pattern
  */
 const makeQueueLayer = (env: CloudflareEnv) => {
   const envLayer = Layer.succeed(Env, env);
   const baseLayer = Layer.mergeAll(
     DbLive,
     RoomDoClientLive,
-    LanguageReviewGoogleLive
+    LanguageReviewConfigurable
   ).pipe(Layer.provideMerge(envLayer));
   const scoringLayer = ScoringServiceLive.pipe(Layer.provideMerge(ScoringConfigLive));
   return Layer.mergeAll(baseLayer, scoringLayer);
