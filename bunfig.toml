@@ -4,5 +4,7 @@
 exclude = [
   "effect/**",
   "**/effect/packages/**",
+  "effect-atom/**",
+  "**/effect-atom/packages/**",
   "node_modules/**"
 ]
