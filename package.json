@@ -7,14 +7,18 @@
   "scripts": {
     "prepare": "effect-language-service patch",
     "test": "bun test apps",
-    "typecheck": "bunx tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "dev:web": "vite apps/web"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260115.0",
     "@effect/language-service": "^0.65.0",
+    "@tailwindcss/vite": "^4.1.18",
     "@types/bun": "latest",
     "@types/react": "^19.2.8",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
+    "vite": "^7.3.1"
   },
   "peerDependencies": {
     "typescript": "^5"
