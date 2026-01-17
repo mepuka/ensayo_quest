@@ -11,6 +11,87 @@ it("rejects invalid TurnSubmission", () => {
   expect(result._tag).toBe("Left");
 });
 
+/**
+ * Test createRoom idempotency retry path (Architecture Invariant #10).
+ * When requestId already exists, returns cached roomId and re-emits event.
+ */
+it("createRoom returns cached roomId on retry and re-emits RoomInitialized", async () => {
+  let createRoomCalled = false;
+  let emittedEvents: Array<unknown> = [];
+  const result = await Effect.runPromise(
+    createRoom({ requestId: "req-existing", topic: "travel", level: "A1", mode: "solo" }).pipe(
+      Effect.provideService(Db, {
+        createRoom: () =>
+          Effect.sync(() => {
+            createRoomCalled = true;
+          }),
+        findScenarioTemplate: () =>
+          Effect.succeed({
+            templateId: "template-1",
+            topic: "travel",
+            level: "A1",
+            seedPrompt: "Bienvenido",
+            turnPlan: [],
+            roleRubrics: []
+          }),
+        insertTurn: () => Effect.void,
+        getTurnSubmission: () =>
+          Effect.succeed({
+            roomId: "r",
+            turnId: "t",
+            templateId: "tmp",
+            turnIndex: 0,
+            speakerUserId: "u",
+            transcript: "hola",
+            audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] }
+          }),
+        getScenarioTemplate: () =>
+          Effect.succeed({
+            templateId: "template-1",
+            topic: "travel",
+            level: "A1",
+            seedPrompt: "Bienvenido",
+            turnPlan: [],
+            roleRubrics: []
+          }),
+        getRoomTemplateId: () => Effect.succeed("template-1"),
+        getNextTurnIndex: () => Effect.succeed(0),
+        updateTurnAudioKey: () => Effect.void,
+        updateTurnScore: () => Effect.void,
+        isMessageProcessed: () => Effect.succeed(false),
+        markMessageProcessed: () => Effect.void,
+        cleanupOldProcessedMessages: () => Effect.void,
+        // Retry path: requestId already exists with cached roomId
+        getRoomByRequestId: () => Effect.succeed("room-cached"),
+        recordRoomRequest: () => Effect.void,
+        getTurnByRequestId: () => Effect.succeed(null),
+        recordTurnRequest: () => Effect.void,
+        getAudioUploadByTurnId: () => Effect.succeed(null),
+        getAudioUploadByRequestId: () => Effect.succeed(null),
+        recordAudioUpload: () => Effect.void,
+        recordAudioUploadRequest: () => Effect.void
+      }),
+      Effect.provideService(RoomIdGenerator, {
+        generate: Effect.sync(() => "room-new") // Should NOT be used on retry
+      }),
+      Effect.provideService(RoomDoClient, {
+        emitRoomEvent: (_roomId, event) =>
+          Effect.sync(() => {
+            emittedEvents.push(event);
+          })
+      })
+    )
+  );
+  // Returns cached roomId, not newly generated one
+  expect(result.roomId).toBe("room-cached");
+  expect(result.seedPrompt).toBe("Bienvenido");
+  // createRoom should NOT be called on retry
+  expect(createRoomCalled).toBe(false);
+  // Event should still be emitted (atomicity gap recovery)
+  expect(emittedEvents.length).toBe(1);
+  expect((emittedEvents[0] as { type: string }).type).toBe("RoomInitialized");
+});
+
 it("createRoom selects a scenario, emits RoomInitialized, and returns its seed prompt", async () => {
   let createdId = "";
   let createdTemplate = "";

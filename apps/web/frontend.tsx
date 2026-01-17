@@ -110,6 +110,35 @@ export const Frontend = () => {
   const uploadAudioStatus = getHttpStatus(uploadAudioResult);
   const uploadAudioError = getHttpError(uploadAudioResult);
 
+  // Track which turnId we've already started uploading for (avoid duplicates)
+  const uploadedTurnIdRef = React.useRef<string | null>(null);
+
+  // Chain audio upload after submitTurn success (Architecture Invariant #9)
+  // Scoring is gated on AudioUploaded, so we must upload after turn is accepted
+  React.useEffect(() => {
+    if (
+      Result.isSuccess(submitTurnResult) &&
+      !Result.isWaiting(submitTurnResult) &&
+      lastAsrResult &&
+      lastAsrResult.audio.length > 0 &&
+      lastAsrResult.sampleRate
+    ) {
+      const turnId = submitTurnResult.value.turnId;
+      // Only upload once per turnId
+      if (uploadedTurnIdRef.current !== turnId) {
+        uploadedTurnIdRef.current = turnId;
+        const wav = encodeWav(lastAsrResult.audio, lastAsrResult.sampleRate);
+        uploadAudio({
+          turnId,
+          roomId: activeRoomId,
+          requestId: lastAsrResult.requestId,
+          audio: wav,
+          contentType: "audio/wav"
+        });
+      }
+    }
+  }, [submitTurnResult, lastAsrResult, activeRoomId, uploadAudio]);
+
   // =============================================================================
   // Action Handlers
   // =============================================================================
@@ -125,25 +154,6 @@ export const Frontend = () => {
     };
     createRoom(input);
     // Note: URL update happens in createRoomFn via pushstate event
-  };
-
-  const runUploadAudio = (turnId: string) => {
-    if (!lastAsrResult || lastAsrResult.audio.length === 0) {
-      return;
-    }
-    if (!lastAsrResult.sampleRate) {
-      return;
-    }
-    const wav = encodeWav(lastAsrResult.audio, lastAsrResult.sampleRate);
-    const input: UploadAudioInput = {
-      turnId,
-      roomId: activeRoomId,
-      // Use the requestId attached when ASR stopped (Architecture Invariant #2)
-      requestId: lastAsrResult.requestId,
-      audio: wav,
-      contentType: "audio/wav"
-    };
-    uploadAudio(input);
   };
 
   const runSubmitTurn = () => {
@@ -177,9 +187,7 @@ export const Frontend = () => {
     };
 
     submitTurn(input);
-
-    // TODO: Chain audio upload after submitTurn success via Result observation
-    // For now, audio upload must be triggered separately with the turnId from submitTurnResult
+    // Audio upload is chained via useEffect observing submitTurnResult
   };
 
   const runAsrStart = () => {

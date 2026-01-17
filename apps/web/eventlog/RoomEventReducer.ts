@@ -137,6 +137,10 @@ type EventHandler<E extends RoomEvent> = (state: RoomState, event: E) => RoomSta
 /**
  * Handle RoomInitialized - room created with seed data.
  * Persists room metadata (seedPrompt, topic, level) that survives refresh.
+ *
+ * Only transitions to "playing" from "connecting" state. Preserves "completed"
+ * or "error" states to handle late retry events from createRoom idempotency.
+ *
  * @see docs/ARCHITECTURE.md - Events section
  */
 const handleRoomInitialized: EventHandler<Extract<RoomEvent, { type: "RoomInitialized" }>> = (
@@ -149,7 +153,9 @@ const handleRoomInitialized: EventHandler<Extract<RoomEvent, { type: "RoomInitia
   seedPrompt: event.seedPrompt,
   topic: event.topic,
   level: event.level,
-  status: "playing"
+  // Only transition to "playing" from initial "connecting" state
+  // Preserve "completed" or "error" states to avoid regression on retry
+  status: state.status === "connecting" ? "playing" : state.status
 });
 
 /**
