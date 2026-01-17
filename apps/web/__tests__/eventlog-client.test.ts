@@ -24,7 +24,9 @@ const scorePayload = {
   },
   overallScore: 0.7,
   feedback: ["Good flow"],
-  nextPrompt: "Continue the conversation."
+  nextPrompt: "Continue the conversation.",
+  modelVersion: "gemini-2.0-flash",
+  confidence: 0.85
 };
 
 // Expected RoomEvent after decoding (what the client sees)
@@ -41,8 +43,8 @@ const expectedScoreEvent: RoomEvent = {
     overallScore: 0.7,
     feedback: ["Good flow"],
     nextPrompt: "Continue the conversation.",
-    modelVersion: "unknown", // Default value from decoder
-    confidence: 1.0 // Default value from decoder
+    modelVersion: "gemini-2.0-flash",
+    confidence: 0.85
   }
 };
 

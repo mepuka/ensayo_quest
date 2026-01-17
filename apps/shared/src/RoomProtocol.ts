@@ -183,7 +183,9 @@ const ScoreUpdatedPayloadSchema = Schema.Struct({
   }),
   overallScore: Schema.Number,
   feedback: Schema.Array(Schema.String),
-  nextPrompt: Schema.String
+  nextPrompt: Schema.String,
+  modelVersion: Schema.String,
+  confidence: Schema.Number
 });
 
 const RoomCompletedPayloadSchema = Schema.Struct({
@@ -315,8 +317,8 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
           overallScore: payload.overallScore,
           feedback: payload.feedback,
           nextPrompt: payload.nextPrompt,
-          modelVersion: "unknown",
-          confidence: 1.0
+          modelVersion: payload.modelVersion,
+          confidence: payload.confidence
         }
       };
     }

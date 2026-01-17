@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS alarm_processing (
 -- Tracks active WebSocket connections with validated sessions
 CREATE TABLE IF NOT EXISTS participant_sessions (
   session_id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
   user_id TEXT NOT NULL,
   connected_at INTEGER NOT NULL,
   last_active_at INTEGER NOT NULL,
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS participant_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_participant_sessions_user_id ON participant_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_participant_sessions_room_id ON participant_sessions(room_id);
 
 -- Idempotency table for audio scoring enqueue (Architecture Invariant #9)
 -- Prevents duplicate scoring queue messages when AudioUploaded event is replayed

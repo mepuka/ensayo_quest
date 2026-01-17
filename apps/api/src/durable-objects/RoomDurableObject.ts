@@ -223,7 +223,9 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
           },
           overallScore: event.evaluation.overallScore,
           feedback: event.evaluation.feedback,
-          nextPrompt: event.evaluation.nextPrompt
+          nextPrompt: event.evaluation.nextPrompt,
+          modelVersion: event.evaluation.modelVersion,
+          confidence: event.evaluation.confidence
         })
       });
       break;

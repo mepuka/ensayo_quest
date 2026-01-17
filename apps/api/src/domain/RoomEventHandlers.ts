@@ -417,10 +417,11 @@ export const SessionValidationLive = Layer.effect(
       createSession: (session: ValidatedSession) => {
         const metadataJson = session.metadata ? JSON.stringify(session.metadata) : null;
         return sql`
-          INSERT INTO participant_sessions (session_id, user_id, connected_at, last_active_at, metadata_json)
-          VALUES (${session.sessionId}, ${session.userId}, ${session.connectedAt}, ${session.lastActiveAt}, ${metadataJson})
+          INSERT INTO participant_sessions (session_id, room_id, user_id, connected_at, last_active_at, metadata_json)
+          VALUES (${session.sessionId}, ${session.roomId}, ${session.userId}, ${session.connectedAt}, ${session.lastActiveAt}, ${metadataJson})
           ON CONFLICT (session_id) DO UPDATE SET
-            last_active_at = ${session.lastActiveAt}
+            last_active_at = ${session.lastActiveAt},
+            room_id = ${session.roomId}
         `.pipe(
           Effect.asVoid,
           Effect.mapError((cause) =>
@@ -436,12 +437,13 @@ export const SessionValidationLive = Layer.effect(
       getSession: (sessionId: string) =>
         sql<{
           session_id: string;
+          room_id: string;
           user_id: string;
           connected_at: number;
           last_active_at: number;
           metadata_json: string | null;
         }>`
-          SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+          SELECT session_id, room_id, user_id, connected_at, last_active_at, metadata_json
           FROM participant_sessions
           WHERE session_id = ${sessionId}
         `.pipe(
@@ -451,7 +453,7 @@ export const SessionValidationLive = Layer.effect(
             return new ValidatedSession({
               sessionId: row.session_id,
               userId: row.user_id,
-              roomId: "", // Not stored in this table, caller must know
+              roomId: row.room_id,
               connectedAt: row.connected_at,
               lastActiveAt: row.last_active_at,
               metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
@@ -497,23 +499,23 @@ export const SessionValidationLive = Layer.effect(
           )
         ),
 
-      getSessionsForRoom: (_roomId: string) =>
-        // Note: This requires joining with room membership data
-        // For now, return all sessions (MVP simplification)
+      getSessionsForRoom: (roomId: string) =>
         sql<{
           session_id: string;
+          room_id: string;
           user_id: string;
           connected_at: number;
           last_active_at: number;
           metadata_json: string | null;
         }>`
-          SELECT session_id, user_id, connected_at, last_active_at, metadata_json
+          SELECT session_id, room_id, user_id, connected_at, last_active_at, metadata_json
           FROM participant_sessions
+          WHERE room_id = ${roomId}
         `.pipe(
           Effect.map((rows) => rows.map(row => new ValidatedSession({
             sessionId: row.session_id,
             userId: row.user_id,
-            roomId: "", // Caller provides this
+            roomId: row.room_id,
             connectedAt: row.connected_at,
             lastActiveAt: row.last_active_at,
             metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined
@@ -521,7 +523,7 @@ export const SessionValidationLive = Layer.effect(
           Effect.mapError((cause) =>
             new RoomEventHandlerError({
               operation: "getSessionsForRoom",
-              roomId: _roomId,
+              roomId,
               cause
             })
           )

@@ -48,7 +48,9 @@ export class ScoreUpdatedPayload extends Schema.Class<ScoreUpdatedPayload>("Scor
   }),
   overallScore: Schema.Number,
   feedback: Schema.Array(Schema.String),
-  nextPrompt: Schema.String
+  nextPrompt: Schema.String,
+  modelVersion: Schema.String,
+  confidence: Schema.Number
 }) {}
 
 export class NpcTurnGeneratedPayload extends Schema.Class<NpcTurnGeneratedPayload>("NpcTurnGeneratedPayload")({
