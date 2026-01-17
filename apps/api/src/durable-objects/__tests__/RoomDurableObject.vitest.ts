@@ -236,8 +236,8 @@ describe("RoomDurableObject Integration", () => {
           yield* emitRoomEvent(stub as { fetch: typeof fetch }, roomId, event);
 
           // Set an alarm via runInDurableObject
-          yield* ctx.runInDurableObject(stub, async (_instance, state: DurableObjectState) => {
-            await state.storage.setAlarm(Date.now() + 1000);
+          yield* ctx.runInDurableObject(stub, async (_instance, state) => {
+            await (state as DurableObjectState).storage.setAlarm(Date.now() + 1000);
           });
 
           // Trigger the alarm immediately
