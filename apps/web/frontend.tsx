@@ -81,6 +81,12 @@ export const Frontend = () => {
   const asrFiberRef = React.useRef<RuntimeFiber<unknown, unknown> | null>(null);
   const isMountedRef = React.useRef(true);
 
+  // Model preload status
+  const [modelStatus, setModelStatus] = React.useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const preloadFiberRef = React.useRef<RuntimeFiber<unknown, unknown> | null>(null);
+
   // Cleanup Effect fibers on unmount
   React.useEffect(() => {
     isMountedRef.current = true;
@@ -91,8 +97,58 @@ export const Frontend = () => {
         Effect.runFork(Fiber.interrupt(asrFiberRef.current));
         asrFiberRef.current = null;
       }
+      // Interrupt preload fiber
+      if (preloadFiberRef.current) {
+        Effect.runFork(Fiber.interrupt(preloadFiberRef.current));
+        preloadFiberRef.current = null;
+      }
     };
   }, []);
+
+  // Preload Whisper model on mount (ensayo_quest-m3q)
+  // Also request persistent storage for Safari to avoid 7-day eviction
+  React.useEffect(() => {
+    // Request persistent storage (prevents Safari 7-day eviction)
+    if (navigator.storage?.persist) {
+      navigator.storage.persist().catch(() => {
+        // Persistence request failed - not critical, just log
+        console.warn("Persistent storage request failed");
+      });
+    }
+
+    // Preload the ASR model
+    const asr = getAsrService(asrServiceResult);
+    if (!asr) {
+      // ASR service not ready yet - will preload when it becomes available
+      return;
+    }
+
+    setModelStatus("loading");
+
+    const program = Effect.gen(function* () {
+      const result = yield* asr.preload();
+      return result.status;
+    }).pipe(
+      Effect.tap((status) =>
+        Effect.sync(() => {
+          if (isMountedRef.current) {
+            setModelStatus("ready");
+            console.log(`Whisper model ${status}`);
+          }
+        })
+      ),
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          if (isMountedRef.current) {
+            setModelStatus("error");
+            console.error("Model preload failed:", error);
+          }
+        })
+      )
+    );
+
+    preloadFiberRef.current = Effect.runFork(program);
+  }, [asrServiceResult]);
 
   // Derive values
   const activeRoomId = Option.isSome(roomId) ? roomId.value : "";
@@ -306,8 +362,14 @@ export const Frontend = () => {
         overall={scorePanelState.overall}
       />
       {scorePanelState.npcPrompt ? <p>NPC: {scorePanelState.npcPrompt}</p> : null}
-      <section data-asr-status={asrState.status}>
+      <section data-asr-status={asrState.status} data-model-status={modelStatus}>
         <h2>Transcription</h2>
+        {modelStatus === "loading" ? (
+          <p data-model-loading>Loading Whisper model...</p>
+        ) : null}
+        {modelStatus === "error" ? (
+          <p data-model-error>Model load failed. ASR may not work.</p>
+        ) : null}
         {asrState.error ? <p data-asr-error>{asrState.error}</p> : null}
         <p>{asrState.transcript || "No transcript yet."}</p>
       </section>

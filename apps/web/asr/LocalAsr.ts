@@ -18,6 +18,13 @@ import { appendAudioBuffer } from "./audioBuffer";
 export interface LocalAsrService {
   start: () => Effect.Effect<void, Error, never>;
   stop: () => Effect.Effect<ASRResult, Error, never>;
+  /**
+   * Preload the Whisper model in the worker.
+   * Call during app initialization for better UX.
+   *
+   * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+   */
+  preload: () => Effect.Effect<{ status: "loaded" | "already_loaded" }, Error, never>;
 }
 
 export class LocalAsr extends Context.Tag("LocalAsr")<LocalAsr, LocalAsrService>() {}
@@ -94,7 +101,18 @@ export const makeLocalAsr = Effect.gen(function* () {
     };
   }, Effect.mapError((cause) => new Error(String(cause))));
 
-  return { start, stop };
+  /**
+   * Preload the Whisper model in the worker.
+   * Returns status indicating whether model was newly loaded or already cached.
+   *
+   * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+   */
+  const preload = Effect.fn(function* () {
+    const response = yield* client.preload();
+    return { status: response.status };
+  }, Effect.mapError((cause) => new Error(String(cause))));
+
+  return { start, stop, preload };
 });
 
 // Layer.scoped ensures worker is cleaned up when the layer scope closes

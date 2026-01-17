@@ -22,6 +22,25 @@ export class TranscribeResponse extends Schema.Class<TranscribeResponse>("Transc
   transcript: Schema.String
 }) {}
 
+/**
+ * Request to preload the Whisper model.
+ * Sent during app initialization for better UX.
+ *
+ * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+ */
+export class PreloadRequest extends Schema.Class<PreloadRequest>("PreloadRequest")({
+  type: Schema.Literal("preload")
+}) {}
+
+/**
+ * Response after model preload completes.
+ * Status indicates whether model was already loaded or newly loaded.
+ */
+export class PreloadResponse extends Schema.Class<PreloadResponse>("PreloadResponse")({
+  type: Schema.Literal("preload_complete"),
+  status: Schema.Union(Schema.Literal("loaded"), Schema.Literal("already_loaded"))
+}) {}
+
 export type WorkerReady = {
   type: "ready";
 };
@@ -31,12 +50,33 @@ export type WorkerError = {
   reason: string;
 };
 
-export type WorkerMessage = TranscribeResponse | WorkerReady | WorkerError;
+export type WorkerMessage = TranscribeResponse | PreloadResponse | WorkerReady | WorkerError;
+
+/**
+ * Union type for all worker requests.
+ */
+export type WorkerRequest = TranscribeRequest | PreloadRequest;
 
 export const decodeTranscribeRequest = Schema.decodeUnknownSync(TranscribeRequest);
 export const encodeTranscribeRequest = Schema.encodeSync(TranscribeRequest);
 export const decodeTranscribeResponse = Schema.decodeUnknownSync(TranscribeResponse);
 export const encodeTranscribeResponse = Schema.encodeSync(TranscribeResponse);
+
+export const decodePreloadRequest = Schema.decodeUnknownSync(PreloadRequest);
+export const encodePreloadRequest = Schema.encodeSync(PreloadRequest);
+export const decodePreloadResponse = Schema.decodeUnknownSync(PreloadResponse);
+export const encodePreloadResponse = Schema.encodeSync(PreloadResponse);
+
+/**
+ * Decode any worker request based on type field.
+ */
+export const decodeWorkerRequest = (input: unknown): WorkerRequest => {
+  const obj = input as { type?: string };
+  if (obj.type === "preload") {
+    return decodePreloadRequest(input);
+  }
+  return decodeTranscribeRequest(input);
+};
 
 export const buildTranscribeRequest = (
   audio: Float32Array,
@@ -48,11 +88,26 @@ export const buildTranscribeRequest = (
     sampleRate
   });
 
-export type AsrWorker = Worker.Worker<TranscribeRequest, TranscribeResponse, TranscriptionFailed>;
+export type AsrWorker = Worker.Worker<WorkerRequest, TranscribeResponse | PreloadResponse, TranscriptionFailed>;
 
 export const createWorkerClient = (worker: AsrWorker) => {
   const transcribe = (audio: Float32Array, sampleRate: number) =>
-    worker.executeEffect(buildTranscribeRequest(audio, sampleRate));
+    worker.executeEffect(buildTranscribeRequest(audio, sampleRate)) as Effect.Effect<
+      TranscribeResponse,
+      TranscriptionFailed
+    >;
 
-  return { transcribe };
+  /**
+   * Preload the Whisper model in the worker.
+   * Returns immediately if model is already loaded.
+   *
+   * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+   */
+  const preload = () =>
+    worker.executeEffect(new PreloadRequest({ type: "preload" })) as Effect.Effect<
+      PreloadResponse,
+      TranscriptionFailed
+    >;
+
+  return { transcribe, preload };
 };

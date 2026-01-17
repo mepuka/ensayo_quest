@@ -3,10 +3,14 @@ import { WorkerRunner } from "@effect/platform";
 import { BrowserWorkerRunner } from "@effect/platform-browser";
 import { pipeline } from "@xenova/transformers";
 import {
-  decodeTranscribeRequest,
+  decodeWorkerRequest,
   encodeTranscribeResponse,
+  encodePreloadResponse,
+  PreloadRequest,
+  PreloadResponse,
   TranscribeRequest,
-  TranscribeResponse
+  TranscribeResponse,
+  type WorkerRequest
 } from "./WorkerClient";
 import { TranscriptionFailed } from "../errors";
 
@@ -25,6 +29,9 @@ const ensureTranscriber = () =>
     catch: (cause) => new TranscriptionFailed({ reason: String(cause) })
   });
 
+/**
+ * Handle transcription request.
+ */
 const transcribe = Effect.fn(function* (request: TranscribeRequest) {
   yield* ensureTranscriber();
   const result = yield* Effect.tryPromise({
@@ -35,9 +42,44 @@ const transcribe = Effect.fn(function* (request: TranscribeRequest) {
   return new TranscribeResponse({ type: "result", transcript });
 });
 
-const runnerLayer = WorkerRunner.layer(transcribe, {
-  decode: (message) => Effect.succeed(decodeTranscribeRequest(message)),
-  encodeOutput: (_request, output) => Effect.succeed(encodeTranscribeResponse(output)),
+/**
+ * Handle preload request - loads model without transcribing.
+ * Returns status indicating whether model was newly loaded or already cached.
+ *
+ * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+ */
+const preload = Effect.fn(function* (_request: PreloadRequest) {
+  const wasAlreadyLoaded = transcriber !== null;
+  yield* ensureTranscriber();
+  return new PreloadResponse({
+    type: "preload_complete",
+    status: wasAlreadyLoaded ? "already_loaded" : "loaded"
+  });
+});
+
+/**
+ * Main request handler - dispatches to transcribe or preload.
+ */
+const handleRequest = Effect.fn(function* (request: WorkerRequest) {
+  if (request.type === "preload") {
+    return yield* preload(request);
+  }
+  return yield* transcribe(request);
+});
+
+/**
+ * Encode output based on response type.
+ */
+const encodeOutput = (_request: WorkerRequest, output: TranscribeResponse | PreloadResponse) => {
+  if (output.type === "preload_complete") {
+    return Effect.succeed(encodePreloadResponse(output as PreloadResponse));
+  }
+  return Effect.succeed(encodeTranscribeResponse(output as TranscribeResponse));
+};
+
+const runnerLayer = WorkerRunner.layer(handleRequest, {
+  decode: (message) => Effect.succeed(decodeWorkerRequest(message)),
+  encodeOutput,
   encodeError: (_request, error) => Effect.succeed(error)
 });
 
