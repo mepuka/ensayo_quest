@@ -278,7 +278,11 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
  */
 export class RoomDurableObject extends EventLogDurableObject {
   private readonly roomRuntime: ManagedRuntime.ManagedRuntime<RoomRuntimeContext, never>;
-  private readonly roomId: string;
+  /**
+   * DO internal ID (used for logging only).
+   * NOT the roomId used for EventLog identity - that comes from request path/envelope.
+   */
+  private readonly doId: string;
 
   constructor(state: DurableObjectState, env: CloudflareEnv) {
     const storage = (state.storage as DurableObjectStorage & { sql: SqlStorage }).sql;
@@ -289,21 +293,21 @@ export class RoomDurableObject extends EventLogDurableObject {
       storageLayer: makeDoSqliteEventLogRuntimeLayer(storage).pipe(Layer.orDie)
     });
 
-    // Store room ID from DO state
-    this.roomId = state.id.toString();
+    // Store DO internal ID for logging (NOT for EventLog identity!)
+    this.doId = state.id.toString();
 
     // blockConcurrencyWhile ensures no requests are processed until schema is applied
     // CRITICAL: Apply schema using a MINIMAL SqlClient-only layer BEFORE creating
     // the full domain runtime. This prevents SqlEventLogServer from trying to
     // create/query tables before our schema tables exist.
     state.blockConcurrencyWhile(async () => {
-      console.log("[RoomDO] Starting schema migration for room:", this.roomId);
+      console.log("[RoomDO] Starting schema migration for DO:", this.doId);
       const schemaRuntime = ManagedRuntime.make(
         makeSqliteOnlyLayer(storage).pipe(Layer.orDie)
       );
       try {
         await schemaRuntime.runPromise(applyRoomSchema);
-        console.log("[RoomDO] Schema migration completed for room:", this.roomId);
+        console.log("[RoomDO] Schema migration completed for DO:", this.doId);
       } catch (e) {
         console.error("[RoomDO] Schema migration FAILED:", e);
         throw e;
@@ -313,7 +317,7 @@ export class RoomDurableObject extends EventLogDurableObject {
     });
 
     // Create runtime with full domain layer AFTER schema is applied
-    console.log("[RoomDO] Creating domain runtime for room:", this.roomId);
+    console.log("[RoomDO] Creating domain runtime for DO:", this.doId);
     this.roomRuntime = ManagedRuntime.make(
       makeRoomDomainLayer(storage, env).pipe(Layer.orDie)
     );
@@ -327,11 +331,17 @@ export class RoomDurableObject extends EventLogDurableObject {
    * 2. Encoding as EventLogRemote.Changes message
    * 3. Sending to all connected WebSockets
    *
+   * CRITICAL: roomId must be the human-readable room name (e.g., "abc-123"),
+   * NOT the DO's internal state.id. This ensures client and server derive
+   * the same encryption identity for the EventLogRemote protocol.
+   *
    * Uses this.runtime (from EventLogDurableObject parent) which has
    * EventLogEncryption and EventLogServer.Storage services.
+   *
+   * @param roomId - The human-readable room name (from request path or event envelope)
+   * @param event - The RoomEvent to broadcast
    */
-  private broadcastEventToClients(event: RoomEvent): void {
-    const roomId = this.roomId;
+  private broadcastEventToClients(roomId: string, event: RoomEvent): void {
     const webSockets = this.ctx.getWebSockets();
 
     if (webSockets.length === 0) {
@@ -446,7 +456,8 @@ export class RoomDurableObject extends EventLogDurableObject {
         onSuccess: () => {
           // Broadcast event to connected WebSocket clients
           // This bridges server-side EventLog.write() to the WebSocket sync protocol
-          this.broadcastEventToClients(envelope.event);
+          // CRITICAL: Use envelope.roomId (human-readable name), not DO state.id
+          this.broadcastEventToClients(envelope.roomId, envelope.event);
           return new Response(null, { status: 204 });
         },
         onFailure: (cause) => {
@@ -493,6 +504,29 @@ export class RoomDurableObject extends EventLogDurableObject {
   }
 
   /**
+   * Extract roomId from WebSocket request URL path.
+   * Path format: /api/rooms/:roomId/stream
+   *
+   * CRITICAL: This returns the human-readable room name, which must match
+   * what clients use for EventLog identity derivation.
+   */
+  private extractRoomIdFromPath(request?: Request): string | null {
+    if (!request) return null;
+    try {
+      const url = new URL(request.url);
+      const pathParts = url.pathname.split("/").filter(Boolean);
+      // Path: ["api", "rooms", ":roomId", "stream"]
+      const roomsIndex = pathParts.indexOf("rooms");
+      if (roomsIndex >= 0 && roomsIndex + 1 < pathParts.length) {
+        return pathParts[roomsIndex + 1];
+      }
+    } catch {
+      // URL parsing failed
+    }
+    return null;
+  }
+
+  /**
    * Handle WebSocket upgrade with session validation.
    *
    * Architecture Invariant #7: WebSocket handlers validate session before processing.
@@ -503,6 +537,16 @@ export class RoomDurableObject extends EventLogDurableObject {
    * - Authorization header: Bearer <token>
    */
   private async handleWebSocketUpgrade(request?: Request): Promise<Response> {
+    // Extract roomId from URL path (human-readable name, NOT DO state.id)
+    // CRITICAL: This must match what clients use for EventLog identity
+    const roomId = this.extractRoomIdFromPath(request);
+    if (!roomId) {
+      return new Response(
+        JSON.stringify({ error: "bad_request", message: "Could not extract roomId from URL path" }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     // Extract session token from request
     let token: string | null = null;
 
@@ -520,8 +564,7 @@ export class RoomDurableObject extends EventLogDurableObject {
       }
     }
 
-    // Validate session token
-    const roomId = this.roomId;
+    // Validate session token (roomId now comes from URL path, not DO state.id)
     const validationResult = await this.roomRuntime.runPromiseExit(
       Effect.gen(function* () {
         const sessionValidation = yield* SessionValidation;
@@ -659,7 +702,8 @@ export class RoomDurableObject extends EventLogDurableObject {
 
     if (attachment) {
       // Capture values for use in generator
-      const roomId = this.roomId;
+      // CRITICAL: Use attachment.roomId (human-readable name from URL), not DO state.id
+      const roomId = attachment.roomId;
       const userId = attachment.userId;
       const sessionId = attachment.sessionId;
 
