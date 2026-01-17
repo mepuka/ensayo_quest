@@ -133,6 +133,73 @@ type RoomRuntimeContext = Layer.Layer.Success<RoomRuntimeLayer>;
 type EmitEventError = EventJournalError | RoomEventHandlerError;
 
 /**
+ * Convert a RoomEvent to the payload format expected by MsgPack encoders.
+ *
+ * The inbound RoomEvent has a different shape than the server payload schemas:
+ * - ScoreUpdated: client uses { evaluation }, encoder expects flat { roomId, scores, ... }
+ * - RoomCompleted: client uses { summary }, encoder expects { roomId, summary, timestamp }
+ * - RoomError: client type is "Error", encoder key is "RoomError", needs roomId + timestamp
+ *
+ * This function normalizes the event to match the encoder schema.
+ *
+ * @returns { eventType: string, payload: object } - The encoder key and matching payload
+ */
+const convertEventToEncoderPayload = (
+  roomId: string,
+  event: RoomEvent
+): { eventType: string; payload: Record<string, unknown> } => {
+  const timestamp = Date.now();
+
+  switch (event.type) {
+    case "ScoreUpdated":
+      // Flatten evaluation object to match ScoreUpdatedPayloadSchema
+      return {
+        eventType: "ScoreUpdated",
+        payload: {
+          roomId,
+          turnId: event.turnId,
+          scores: event.evaluation.scores,
+          overallScore: event.evaluation.overallScore,
+          feedback: event.evaluation.feedback,
+          nextPrompt: event.evaluation.nextPrompt,
+          modelVersion: event.evaluation.modelVersion,
+          confidence: event.evaluation.confidence
+        }
+      };
+
+    case "RoomCompleted":
+      // Add roomId and timestamp
+      return {
+        eventType: "RoomCompleted",
+        payload: {
+          roomId,
+          summary: event.summary,
+          timestamp
+        }
+      };
+
+    case "Error":
+      // Normalize type to "RoomError" and add roomId + timestamp
+      return {
+        eventType: "RoomError",
+        payload: {
+          roomId,
+          code: event.code,
+          message: event.message,
+          retryable: event.retryable,
+          timestamp
+        }
+      };
+
+    default: {
+      // Other events already match their encoder schemas (just strip the type)
+      const { type: eventType, ...payloadWithoutType } = event;
+      return { eventType, payload: payloadWithoutType };
+    }
+  }
+};
+
+/**
  * Convert legacy RoomEvent to domain event payloads.
  * This bridges the old protocol events to the new typed payloads.
  *
@@ -356,16 +423,21 @@ export class RoomDurableObject extends EventLogDurableObject {
         const encryption = yield* EventLogEncryption;
         const identity = yield* makeRoomIdentity(roomId);
 
-        // Extract payload WITHOUT type field - client's decodeJournalEntry expects this format
-        // The event type is stored in entry.event, not in the payload
-        const { type: eventType, ...payloadWithoutType } = event;
+        // Convert event to encoder-compatible payload format
+        // This handles mismatches between client event shapes and server payload schemas:
+        // - ScoreUpdated: flattens evaluation object + adds roomId
+        // - RoomCompleted: adds roomId + timestamp
+        // - RoomError: normalizes type from "Error" to "RoomError" + adds roomId + timestamp
+        const { eventType, payload: payloadData } = convertEventToEncoderPayload(roomId, event);
+
         if (!(eventType in payloadEncoders)) {
           yield* Effect.logWarning(`No encoder for event type: ${eventType}, skipping broadcast`);
           return;
         }
-        // Cast to Record and use non-null assertion - we already checked eventType is in payloadEncoders
+
+        // Encode the normalized payload
         const encoder = (payloadEncoders as Record<string, (input: unknown) => Uint8Array>)[eventType]!;
-        const payload = encoder(payloadWithoutType);
+        const payload = encoder(payloadData);
 
         const entry = new Entry({
           id: makeEntryId(),
