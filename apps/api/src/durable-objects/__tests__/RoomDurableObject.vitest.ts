@@ -10,7 +10,7 @@
  * Run with: bun run test:integration
  */
 import { describe, it, expect } from "vitest";
-import { Effect } from "effect";
+import { Effect, Data } from "effect";
 import {
   effectTest,
   CloudflareTestContext,
@@ -29,6 +29,10 @@ declare module "../../test/effect-vitest-cloudflare" {
     DB: D1Database;
   }
 }
+
+class EmitEventError extends Data.TaggedError("EmitEventError")<{
+  cause: unknown;
+}> {}
 
 /**
  * Helper to emit a RoomEvent to a DO using the proper MsgPack protocol
@@ -55,7 +59,7 @@ const emitRoomEvent = (
       });
       return response;
     },
-    catch: (e) => e as Error,
+    catch: (cause) => new EmitEventError({ cause }),
   });
 
 describe("RoomDurableObject Integration", () => {
