@@ -93,12 +93,55 @@ CREATE TABLE IF NOT EXISTS turn_accepted_idempotency (
 `;
 
 /**
+ * Apply schema migrations for existing tables.
+ *
+ * P1-03 FIX: Existing DOs may have participant_sessions without room_id column.
+ * CREATE TABLE IF NOT EXISTS doesn't add columns to existing tables.
+ * This migration checks and adds missing columns.
+ */
+const applyMigrations = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+
+  // Check if participant_sessions table exists
+  const tableExists = yield* sql.unsafe<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='participant_sessions'"
+  );
+
+  if (tableExists.length === 0) {
+    // Table doesn't exist yet, CREATE TABLE will handle it
+    return;
+  }
+
+  // Check if room_id column exists in participant_sessions
+  // PRAGMA table_info returns columns with: cid, name, type, notnull, dflt_value, pk
+  const columns = yield* sql.unsafe<{ name: string }>(
+    "PRAGMA table_info(participant_sessions)"
+  );
+  const hasRoomId = columns.some((col) => col.name === "room_id");
+
+  if (!hasRoomId) {
+    yield* Effect.logInfo("P1-03 migration: Adding room_id column to participant_sessions");
+
+    // SQLite ADD COLUMN cannot have NOT NULL without default
+    // Add as nullable TEXT, then backfill
+    yield* sql.unsafe("ALTER TABLE participant_sessions ADD COLUMN room_id TEXT").withoutTransform;
+
+    // Backfill existing rows with empty string (sessions without room_id are legacy)
+    yield* sql.unsafe("UPDATE participant_sessions SET room_id = '' WHERE room_id IS NULL").withoutTransform;
+
+    yield* Effect.logInfo("P1-03 migration: room_id column added and backfilled");
+  }
+});
+
+/**
  * Apply the room schema to the DO's SQLite database.
  *
  * PRAGMA must run OUTSIDE transactions per SQLite spec.
  * Schema DDL wrapped in transaction for atomicity - if any statement fails,
  * all changes are rolled back. All statements use IF NOT EXISTS
  * for idempotency (safe to re-run on every DO wake).
+ *
+ * P1-03: Migrations run FIRST to handle existing tables needing column additions.
  */
 export const applyRoomSchema = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -106,6 +149,10 @@ export const applyRoomSchema = Effect.gen(function* () {
   // NOTE: PRAGMA foreign_keys is NOT supported in Cloudflare DO SQLite
   // Foreign key constraints are enforced differently in DO storage
   // See: https://developers.cloudflare.com/durable-objects/api/transactional-storage-api/
+
+  // P1-03: Apply migrations for existing tables FIRST
+  // This adds missing columns to tables created before schema updates
+  yield* applyMigrations;
 
   // Schema DDL - each statement executed individually
   // CREATE TABLE IF NOT EXISTS is idempotent (safe to re-run on every DO wake)
