@@ -9,6 +9,7 @@
     "test": "bun test apps",
     "test:integration": "vitest run --config apps/api/vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
+    "typecheck:changed": "./scripts/typecheck-changed.sh",
     "dev:web": "vite apps/web"
   },
   "devDependencies": {
