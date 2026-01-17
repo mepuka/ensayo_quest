@@ -5,6 +5,8 @@
   "type": "module",
   "main": "frontend.tsx",
   "dependencies": {
-    "@ensayo/shared": "workspace:*"
+    "@ensayo/shared": "workspace:*",
+    "@radix-ui/react-progress": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4"
   }
 }
