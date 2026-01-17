@@ -465,7 +465,7 @@ export class RoomDurableObject extends EventLogDurableObject {
             new PersistedEntry({
               entryId: entry.id,
               iv: encrypted.iv,
-              encryptedEntry: encrypted.encryptedEntries[0]
+              encryptedEntry: encrypted.encryptedEntries[0]!
             })
           ]
         );
