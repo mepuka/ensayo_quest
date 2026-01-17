@@ -127,7 +127,19 @@ const jsonResponse = <A, I>(schema: Schema.Schema<A, I>, value: A, status = 200)
     headers: { "Content-Type": "application/json" }
   });
 
-const wsUrlForRoom = (request: Request, roomId: string) => {
+/**
+ * Build WebSocket URL for a room.
+ * Uses SELF_URL env var if available (required for Pages → Workers proxy),
+ * otherwise falls back to deriving from request URL (local dev).
+ */
+const wsUrlForRoom = (env: CloudflareEnv, request: Request, roomId: string) => {
+  // Use SELF_URL when available (production/staging with Pages proxy)
+  if (env.SELF_URL) {
+    const selfUrl = new URL(env.SELF_URL);
+    const protocol = selfUrl.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${selfUrl.host}/api/rooms/${roomId}/stream`;
+  }
+  // Fallback for local development (direct to Workers API)
   const url = new URL(request.url);
   const protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${url.host}/api/rooms/${roomId}/stream`;
@@ -190,7 +202,7 @@ export default {
         const created = yield* handlers.createRoom(input);
         return jsonResponse(CreateRoomResponse, new CreateRoomResponse({
           roomId: created.roomId,
-          wsUrl: wsUrlForRoom(request, created.roomId),
+          wsUrl: wsUrlForRoom(env, request, created.roomId),
           seedPrompt: created.seedPrompt
         }), 201);
       }

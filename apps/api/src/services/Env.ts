@@ -13,6 +13,9 @@ export interface CloudflareEnv {
   // Language review mode: "google" | "mock" | "disabled" (default: "google")
   // Use "mock" for integration tests, "disabled" to skip LLM scoring
   LANGUAGE_REVIEW_MODE?: string;
+  // Worker's own external URL for WebSocket connections (bypasses Pages proxy)
+  // Example: "https://ensayo-quest-api-staging.kokokessy.workers.dev"
+  SELF_URL?: string;
 }
 
 export class Env extends Context.Tag("Env")<Env, CloudflareEnv>() {}

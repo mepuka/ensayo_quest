@@ -46,7 +46,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
 
     // Fallback: Direct fetch for local dev or when binding unavailable
     const apiBaseUrl =
-      env.API_WORKER_URL || "https://ensayo-quest-api-staging.mepuka.workers.dev";
+      env.API_WORKER_URL || "https://ensayo-quest-api-staging.kokokessy.workers.dev";
     const fallbackUrl = new URL(apiPath + url.search, apiBaseUrl);
     const fallbackRequest = new Request(fallbackUrl.toString(), {
       method: request.method,
