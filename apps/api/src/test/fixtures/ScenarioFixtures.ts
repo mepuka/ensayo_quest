@@ -12,16 +12,18 @@ import { RoleRubric } from "../../domain/RoleRubric";
 // TurnPlan Fixtures
 // =============================================================================
 
-export const TurnPlanFixtures = {
-  defaults: {
-    turnIndex: 0,
-    speakerRole: "A",
-    promptType: "user" as const,
-    objectiveIds: ["obj-1"]
-  },
+const TurnPlanDefaults = {
+  turnIndex: 0,
+  speakerRole: "A",
+  promptType: "user" as const,
+  objectiveIds: ["obj-1"]
+};
 
-  make: (overrides: Partial<typeof TurnPlanFixtures.defaults> = {}) =>
-    new TurnPlan({ ...TurnPlanFixtures.defaults, ...overrides }),
+export const TurnPlanFixtures = {
+  defaults: TurnPlanDefaults,
+
+  make: (overrides: Partial<typeof TurnPlanDefaults> = {}) =>
+    new TurnPlan({ ...TurnPlanDefaults, ...overrides }),
 
   /** User turn at specified index */
   userTurn: (turnIndex: number, objectiveIds: string[] = ["obj-1"]) =>
@@ -44,15 +46,17 @@ export const TurnPlanFixtures = {
 // RoleRubric Fixtures
 // =============================================================================
 
-export const RoleRubricFixtures = {
-  defaults: {
-    roleId: "A",
-    targetVocab: ["hola", "gracias"],
-    targetGrammar: ["present_tense"]
-  },
+const RoleRubricDefaults = {
+  roleId: "A",
+  targetVocab: ["hola", "gracias"],
+  targetGrammar: ["present_tense"]
+};
 
-  make: (overrides: Partial<typeof RoleRubricFixtures.defaults> = {}) =>
-    new RoleRubric({ ...RoleRubricFixtures.defaults, ...overrides }),
+export const RoleRubricFixtures = {
+  defaults: RoleRubricDefaults,
+
+  make: (overrides: Partial<typeof RoleRubricDefaults> = {}) =>
+    new RoleRubric({ ...RoleRubricDefaults, ...overrides }),
 
   /** Basic rubric with custom vocab and grammar */
   basic: (roleId: string, targetVocab: string[], targetGrammar: string[] = []) =>
@@ -95,18 +99,20 @@ export const RoleRubricFixtures = {
 // ScenarioTemplate Fixtures
 // =============================================================================
 
-export const ScenarioFixtures = {
-  defaults: {
-    templateId: "tpl-test",
-    topic: "travel",
-    level: "A2",
-    seedPrompt: "Hola, bienvenido.",
-    turnPlan: [] as TurnPlan[],
-    roleRubrics: [] as RoleRubric[]
-  },
+const ScenarioDefaults = {
+  templateId: "tpl-test",
+  topic: "travel",
+  level: "A2",
+  seedPrompt: "Hola, bienvenido.",
+  turnPlan: [] as TurnPlan[],
+  roleRubrics: [] as RoleRubric[]
+};
 
-  make: (overrides: Partial<typeof ScenarioFixtures.defaults> = {}) =>
-    new ScenarioTemplate({ ...ScenarioFixtures.defaults, ...overrides }),
+export const ScenarioFixtures = {
+  defaults: ScenarioDefaults,
+
+  make: (overrides: Partial<typeof ScenarioDefaults> = {}) =>
+    new ScenarioTemplate({ ...ScenarioDefaults, ...overrides }),
 
   // -------------------------------------------------------------------------
   // Level presets by topic

@@ -56,6 +56,7 @@ import { makeRoomDoTestLayer, type RoomDoTestConfig } from "./RoomDoTestLayer";
 import { RoomIdGenerator } from "../../services/RoomIdGenerator";
 import { Turnstile } from "../../security/Turnstile";
 import { Effect } from "effect";
+import type { SeedScenario } from "../../seed/SeedData";
 
 export interface FullTestLayerConfig {
   dbState?: DbTestState;
@@ -84,7 +85,7 @@ export const makeFullTestLayer = (config: FullTestLayerConfig = {}) => {
   // Optionally seed scenarios
   if (seeded) {
     const { seedScenarios } = require("../../seed/SeedData");
-    seedScenarios.forEach((s: { template: { templateId: string } }) =>
+    seedScenarios.forEach((s: SeedScenario) =>
       state.scenarios.set(s.template.templateId, s.template)
     );
   }

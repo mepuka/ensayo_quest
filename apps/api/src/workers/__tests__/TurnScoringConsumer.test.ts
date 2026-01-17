@@ -85,7 +85,8 @@ it("scores turn and emits ScoreUpdated", async () => {
     getAudioUploadByTurnId: () => Effect.succeed({ audioKey: "turns/t1", requestId: "req-1" }),
     getAudioUploadByRequestId: () => Effect.succeed(null),
     recordAudioUpload: () => Effect.void,
-    recordAudioUploadRequest: () => Effect.void
+    recordAudioUploadRequest: () => Effect.void,
+    insertScenarioTemplate: () => Effect.void
   });
   const scoringLayer = Layer.succeed(ScoringService, {
     evaluate: (input) =>
@@ -184,7 +185,8 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
     getAudioUploadByTurnId: () => Effect.succeed(null),
     getAudioUploadByRequestId: () => Effect.succeed(null),
     recordAudioUpload: () => Effect.void,
-    recordAudioUploadRequest: () => Effect.void
+    recordAudioUploadRequest: () => Effect.void,
+    insertScenarioTemplate: () => Effect.void
   });
 
   const scoringLayer = Layer.succeed(ScoringService, {

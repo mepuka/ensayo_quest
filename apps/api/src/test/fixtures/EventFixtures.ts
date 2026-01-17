@@ -27,18 +27,20 @@ const now = () => Date.now();
 // RoomInitialized Fixtures
 // =============================================================================
 
-export const RoomInitializedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    scenarioId: "tpl-test",
-    seedPrompt: "Hola, bienvenido.",
-    topic: "travel",
-    level: "A2",
-    timestamp: now()
-  },
+const RoomInitializedDefaults = {
+  roomId: "room-test",
+  scenarioId: "tpl-test",
+  seedPrompt: "Hola, bienvenido.",
+  topic: "travel",
+  level: "A2",
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof RoomInitializedFixtures.defaults> = {}) =>
-    new RoomInitializedPayload({ ...RoomInitializedFixtures.defaults, ...overrides }),
+export const RoomInitializedFixtures = {
+  defaults: RoomInitializedDefaults,
+
+  make: (overrides: Partial<typeof RoomInitializedDefaults> = {}) =>
+    new RoomInitializedPayload({ ...RoomInitializedDefaults, ...overrides }),
 
   /** Room initialized for specific topic/level */
   forTopicLevel: (roomId: string, topic: string, level: string, seedPrompt: string) =>
@@ -56,17 +58,19 @@ export const RoomInitializedFixtures = {
 // TurnAccepted Fixtures
 // =============================================================================
 
-export const TurnAcceptedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-test",
-    playerId: "user-test",
-    transcript: "Hola, quiero un billete de ida.",
-    timestamp: now()
-  },
+const TurnAcceptedDefaults = {
+  roomId: "room-test",
+  turnId: "turn-test",
+  playerId: "user-test",
+  transcript: "Hola, quiero un billete de ida.",
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof TurnAcceptedFixtures.defaults> = {}) =>
-    new TurnAcceptedPayload({ ...TurnAcceptedFixtures.defaults, ...overrides }),
+export const TurnAcceptedFixtures = {
+  defaults: TurnAcceptedDefaults,
+
+  make: (overrides: Partial<typeof TurnAcceptedDefaults> = {}) =>
+    new TurnAcceptedPayload({ ...TurnAcceptedDefaults, ...overrides }),
 
   /** Turn accepted in specific room */
   inRoom: (roomId: string, turnId: string, transcript: string) =>
@@ -82,24 +86,26 @@ export const TurnAcceptedFixtures = {
 // ScoreUpdated Fixtures
 // =============================================================================
 
-export const ScoreUpdatedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-test",
-    scores: {
-      fluency: 75,
-      vocab: 80,
-      naturalness: 70
-    },
-    overallScore: 75,
-    feedback: ["Good vocabulary usage", "Work on fluency"],
-    nextPrompt: "Muy bien. ¿De dónde sale el tren?",
-    modelVersion: "v1.0.0",
-    confidence: 0.85
+const ScoreUpdatedDefaults = {
+  roomId: "room-test",
+  turnId: "turn-test",
+  scores: {
+    fluency: 75,
+    vocab: 80,
+    naturalness: 70
   },
+  overallScore: 75,
+  feedback: ["Good vocabulary usage", "Work on fluency"],
+  nextPrompt: "Muy bien. ¿De dónde sale el tren?",
+  modelVersion: "v1.0.0",
+  confidence: 0.85
+};
 
-  make: (overrides: Partial<typeof ScoreUpdatedFixtures.defaults> = {}) =>
-    new ScoreUpdatedPayload({ ...ScoreUpdatedFixtures.defaults, ...overrides }),
+export const ScoreUpdatedFixtures = {
+  defaults: ScoreUpdatedDefaults,
+
+  make: (overrides: Partial<typeof ScoreUpdatedDefaults> = {}) =>
+    new ScoreUpdatedPayload({ ...ScoreUpdatedDefaults, ...overrides }),
 
   /** High score result */
   highScore: (roomId: string, turnId: string) =>
@@ -145,18 +151,20 @@ export const ScoreUpdatedFixtures = {
 // AudioUploaded Fixtures
 // =============================================================================
 
-export const AudioUploadedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-test",
-    audioKey: "turns/turn-test/audio.webm",
-    requestId: "req-test",
-    fileSizeBytes: 15000,
-    timestamp: now()
-  },
+const AudioUploadedDefaults = {
+  roomId: "room-test",
+  turnId: "turn-test",
+  audioKey: "turns/turn-test/audio.webm",
+  requestId: "req-test",
+  fileSizeBytes: 15000,
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof AudioUploadedFixtures.defaults> = {}) =>
-    new AudioUploadedPayload({ ...AudioUploadedFixtures.defaults, ...overrides }),
+export const AudioUploadedFixtures = {
+  defaults: AudioUploadedDefaults,
+
+  make: (overrides: Partial<typeof AudioUploadedDefaults> = {}) =>
+    new AudioUploadedPayload({ ...AudioUploadedDefaults, ...overrides }),
 
   /** Audio uploaded for specific turn */
   forTurn: (roomId: string, turnId: string, requestId: string = crypto.randomUUID()) =>
@@ -184,18 +192,20 @@ export const AudioUploadedFixtures = {
 // NpcTurnGenerated Fixtures
 // =============================================================================
 
-export const NpcTurnGeneratedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-npc-test",
-    npcId: "npc-guide",
-    content: "Muy bien. ¿A qué hora quiere salir?",
-    stepIndex: 1,
-    timestamp: now()
-  },
+const NpcTurnGeneratedDefaults = {
+  roomId: "room-test",
+  turnId: "turn-npc-test",
+  npcId: "npc-guide",
+  content: "Muy bien. ¿A qué hora quiere salir?",
+  stepIndex: 1,
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof NpcTurnGeneratedFixtures.defaults> = {}) =>
-    new NpcTurnGeneratedPayload({ ...NpcTurnGeneratedFixtures.defaults, ...overrides }),
+export const NpcTurnGeneratedFixtures = {
+  defaults: NpcTurnGeneratedDefaults,
+
+  make: (overrides: Partial<typeof NpcTurnGeneratedDefaults> = {}) =>
+    new NpcTurnGeneratedPayload({ ...NpcTurnGeneratedDefaults, ...overrides }),
 
   /** NPC response at specific step */
   atStep: (roomId: string, stepIndex: number, content: string) =>
@@ -212,17 +222,19 @@ export const NpcTurnGeneratedFixtures = {
 // TurnAdvanced Fixtures
 // =============================================================================
 
-export const TurnAdvancedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    fromStepIndex: 0,
-    toStepIndex: 1,
-    nextParticipantType: "NPC" as const,
-    nextParticipantId: "npc-guide"
-  },
+const TurnAdvancedDefaults = {
+  roomId: "room-test",
+  fromStepIndex: 0,
+  toStepIndex: 1,
+  nextParticipantType: "NPC" as const,
+  nextParticipantId: "npc-guide"
+};
 
-  make: (overrides: Partial<typeof TurnAdvancedFixtures.defaults> = {}) =>
-    new TurnAdvancedPayload({ ...TurnAdvancedFixtures.defaults, ...overrides }),
+export const TurnAdvancedFixtures = {
+  defaults: TurnAdvancedDefaults,
+
+  make: (overrides: Partial<typeof TurnAdvancedDefaults> = {}) =>
+    new TurnAdvancedPayload({ ...TurnAdvancedDefaults, ...overrides }),
 
   /** Advance to player's turn */
   toPlayer: (roomId: string, fromStep: number, playerId: string) =>
@@ -249,16 +261,18 @@ export const TurnAdvancedFixtures = {
 // PlayerJoined Fixtures
 // =============================================================================
 
-export const PlayerJoinedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    playerId: "user-test",
-    sessionId: "session-test",
-    timestamp: now()
-  },
+const PlayerJoinedDefaults = {
+  roomId: "room-test",
+  playerId: "user-test",
+  sessionId: "session-test",
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof PlayerJoinedFixtures.defaults> = {}) =>
-    new PlayerJoinedPayload({ ...PlayerJoinedFixtures.defaults, ...overrides }),
+export const PlayerJoinedFixtures = {
+  defaults: PlayerJoinedDefaults,
+
+  make: (overrides: Partial<typeof PlayerJoinedDefaults> = {}) =>
+    new PlayerJoinedPayload({ ...PlayerJoinedDefaults, ...overrides }),
 
   /** Player joined specific room */
   inRoom: (roomId: string, playerId: string, sessionId: string = crypto.randomUUID()) =>
@@ -274,16 +288,18 @@ export const PlayerJoinedFixtures = {
 // PlayerDisconnected Fixtures
 // =============================================================================
 
-export const PlayerDisconnectedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    playerId: "user-test",
-    sessionId: "session-test",
-    timestamp: now()
-  },
+const PlayerDisconnectedDefaults = {
+  roomId: "room-test",
+  playerId: "user-test",
+  sessionId: "session-test",
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof PlayerDisconnectedFixtures.defaults> = {}) =>
-    new PlayerDisconnectedPayload({ ...PlayerDisconnectedFixtures.defaults, ...overrides }),
+export const PlayerDisconnectedFixtures = {
+  defaults: PlayerDisconnectedDefaults,
+
+  make: (overrides: Partial<typeof PlayerDisconnectedDefaults> = {}) =>
+    new PlayerDisconnectedPayload({ ...PlayerDisconnectedDefaults, ...overrides }),
 
   /** Player disconnected from specific room */
   fromRoom: (roomId: string, playerId: string, sessionId: string) =>
@@ -299,15 +315,17 @@ export const PlayerDisconnectedFixtures = {
 // RoomCompleted Fixtures
 // =============================================================================
 
-export const RoomCompletedFixtures = {
-  defaults: {
-    roomId: "room-test",
-    summary: "Conversation completed successfully. Great progress!",
-    timestamp: now()
-  },
+const RoomCompletedDefaults = {
+  roomId: "room-test",
+  summary: "Conversation completed successfully. Great progress!",
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof RoomCompletedFixtures.defaults> = {}) =>
-    new RoomCompletedPayload({ ...RoomCompletedFixtures.defaults, ...overrides }),
+export const RoomCompletedFixtures = {
+  defaults: RoomCompletedDefaults,
+
+  make: (overrides: Partial<typeof RoomCompletedDefaults> = {}) =>
+    new RoomCompletedPayload({ ...RoomCompletedDefaults, ...overrides }),
 
   /** Room completed with summary */
   withSummary: (roomId: string, summary: string) =>
@@ -322,17 +340,19 @@ export const RoomCompletedFixtures = {
 // RoomError Fixtures
 // =============================================================================
 
-export const RoomErrorFixtures = {
-  defaults: {
-    roomId: "room-test",
-    code: "INTERNAL_ERROR",
-    message: "An unexpected error occurred",
-    retryable: true,
-    timestamp: now()
-  },
+const RoomErrorDefaults = {
+  roomId: "room-test",
+  code: "INTERNAL_ERROR",
+  message: "An unexpected error occurred",
+  retryable: true,
+  timestamp: now()
+};
 
-  make: (overrides: Partial<typeof RoomErrorFixtures.defaults> = {}) =>
-    new RoomErrorPayload({ ...RoomErrorFixtures.defaults, ...overrides }),
+export const RoomErrorFixtures = {
+  defaults: RoomErrorDefaults,
+
+  make: (overrides: Partial<typeof RoomErrorDefaults> = {}) =>
+    new RoomErrorPayload({ ...RoomErrorDefaults, ...overrides }),
 
   /** Retryable error */
   retryable: (roomId: string, code: string, message: string) =>

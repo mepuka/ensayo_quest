@@ -54,6 +54,7 @@ const makeTestDb = (overrides: Partial<DbService> = {}): DbService => ({
   getAudioUploadByRequestId: () => Effect.succeed(null),
   recordAudioUpload: () => Effect.void,
   recordAudioUploadRequest: () => Effect.void,
+  insertScenarioTemplate: () => Effect.void,
   ...overrides
 });
 

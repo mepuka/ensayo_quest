@@ -69,7 +69,8 @@ it("createRoom returns cached roomId on retry and re-emits RoomInitialized", asy
         getAudioUploadByTurnId: () => Effect.succeed(null),
         getAudioUploadByRequestId: () => Effect.succeed(null),
         recordAudioUpload: () => Effect.void,
-        recordAudioUploadRequest: () => Effect.void
+        recordAudioUploadRequest: () => Effect.void,
+        insertScenarioTemplate: () => Effect.void
       }),
       Effect.provideService(RoomIdGenerator, {
         generate: Effect.sync(() => "room-new") // Should NOT be used on retry
@@ -148,7 +149,8 @@ it("createRoom selects a scenario, emits RoomInitialized, and returns its seed p
         getAudioUploadByTurnId: () => Effect.succeed(null),
         getAudioUploadByRequestId: () => Effect.succeed(null),
         recordAudioUpload: () => Effect.void,
-        recordAudioUploadRequest: () => Effect.void
+        recordAudioUploadRequest: () => Effect.void,
+        insertScenarioTemplate: () => Effect.void
       }),
       Effect.provideService(RoomIdGenerator, {
         generate: Effect.sync(() => "room-1")
@@ -240,7 +242,8 @@ it("submitTurn records turn and emits TurnAccepted (without enqueuing scoring)",
         getAudioUploadByTurnId: () => Effect.succeed(null),
         getAudioUploadByRequestId: () => Effect.succeed(null),
         recordAudioUpload: () => Effect.void,
-        recordAudioUploadRequest: () => Effect.void
+        recordAudioUploadRequest: () => Effect.void,
+        insertScenarioTemplate: () => Effect.void
       }),
       // NOTE: TurnQueue is NOT needed - scoring is enqueued by AudioUploaded handler
       Effect.provideService(RoomDoClient, {

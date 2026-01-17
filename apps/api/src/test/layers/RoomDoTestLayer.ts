@@ -12,7 +12,7 @@
  * ```
  */
 import { Effect, Layer } from "effect";
-import { RoomDoClient, type RoomDoClientService } from "../../services/RoomDoClient";
+import { RoomDoClient, RoomDoClientError, type RoomDoClientService } from "../../services/RoomDoClient";
 import type { RoomEvent } from "../../domain/RoomProtocol";
 
 // =============================================================================
@@ -41,7 +41,7 @@ export const makeRoomDoTestLayer = (config: RoomDoTestConfig = {}) => {
   return Layer.succeed(RoomDoClient, {
     emitRoomEvent: (roomId, event, stateJson) => {
       if (shouldFail) {
-        return Effect.fail({ _tag: "RoomDoClientError", reason: failReason } as const);
+        return Effect.fail(new RoomDoClientError({ reason: failReason }));
       }
 
       return Effect.sync(() => {

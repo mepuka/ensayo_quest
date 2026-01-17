@@ -73,7 +73,8 @@ it.skip("emits ScoreUpdated with language review feedback", async () => {
     getAudioUploadByTurnId: () => Effect.succeed({ audioKey: "turns/t1", requestId: "req-1" }),
     getAudioUploadByRequestId: () => Effect.succeed(null),
     recordAudioUpload: () => Effect.void,
-    recordAudioUploadRequest: () => Effect.void
+    recordAudioUploadRequest: () => Effect.void,
+    insertScenarioTemplate: () => Effect.void
   });
   const doLayer = Layer.succeed(RoomDoClient, {
     emitRoomEvent: (_roomId, event) =>

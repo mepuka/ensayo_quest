@@ -113,7 +113,8 @@ const makeDbLayer = (options?: {
       ),
     getAudioUploadByRequestId: () => Effect.succeed(null),
     recordAudioUpload: () => Effect.void,
-    recordAudioUploadRequest: () => Effect.void
+    recordAudioUploadRequest: () => Effect.void,
+    insertScenarioTemplate: () => Effect.void
   });
 
 /**

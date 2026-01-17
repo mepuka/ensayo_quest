@@ -25,6 +25,8 @@ import { TurnSubmission } from "../../domain/TurnSubmission";
 import { TurnEvaluation } from "../../domain/RoomProtocol";
 import type { RoomEvent } from "../../domain/RoomProtocol";
 import type { TurnScoringInput } from "../../services/ScoringService";
+import { Db, DbError } from "../../services/Db";
+import type { SeedScenario } from "../../seed/SeedData";
 
 describe("TurnScoringConsumer with Test Layers", () => {
   let dbState: DbTestState;
@@ -47,7 +49,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
 
     // Pre-seed scenarios
     const { seedScenarios } = require("../../seed/SeedData");
-    seedScenarios.forEach((s: { template: { templateId: string } }) =>
+    seedScenarios.forEach((s: SeedScenario) =>
       dbState.scenarios.set(s.template.templateId, s.template)
     );
 
@@ -101,7 +103,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
           const room = dbState.rooms.get(roomId);
           return room
             ? Effect.succeed(room.templateId)
-            : Effect.fail(new (require("../../services/Db").DbError)({ reason: "room_not_found" }));
+            : Effect.fail(new DbError({ reason: "room_not_found" }));
         },
         insertTurn: (submission: TurnSubmission) =>
           Effect.sync(() => {
@@ -111,7 +113,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
           const turn = dbState.turns.get(turnId);
           return turn
             ? Effect.succeed(turn)
-            : Effect.fail(new (require("../../services/Db").DbError)({ reason: "turn_not_found" }));
+            : Effect.fail(new DbError({ reason: "turn_not_found" }));
         },
         getNextTurnIndex: (roomId: string) => {
           const count = [...dbState.turns.values()].filter((t) => t.roomId === roomId).length;
@@ -131,13 +133,13 @@ describe("TurnScoringConsumer with Test Layers", () => {
               return Effect.succeed(scenario);
             }
           }
-          return Effect.fail(new (require("../../services/Db").DbError)({ reason: "scenario_not_found" }));
+          return Effect.fail(new DbError({ reason: "scenario_not_found" }));
         },
         getScenarioTemplate: (templateId: string) => {
           const scenario = dbState.scenarios.get(templateId);
           return scenario
             ? Effect.succeed(scenario)
-            : Effect.fail(new (require("../../services/Db").DbError)({ reason: "scenario_not_found" }));
+            : Effect.fail(new DbError({ reason: "scenario_not_found" }));
         },
         insertScenarioTemplate: () => Effect.void,
         isMessageProcessed: (messageId: string) => Effect.succeed(dbState.processedMessages.has(messageId)),
@@ -297,7 +299,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
 
     // Pre-seed scenarios
     const { seedScenarios } = require("../../seed/SeedData");
-    seedScenarios.forEach((s: { template: { templateId: string } }) =>
+    seedScenarios.forEach((s: SeedScenario) =>
       dbState.scenarios.set(s.template.templateId, s.template)
     );
 

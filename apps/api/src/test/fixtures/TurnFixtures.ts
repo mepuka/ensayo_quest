@@ -103,22 +103,24 @@ export const AudioStatsFixtures = {
 // TurnSubmission Fixtures
 // =============================================================================
 
-export const TurnSubmissionFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-test",
-    templateId: "tpl-test",
-    turnIndex: 0,
-    speakerUserId: "user-test",
-    transcript: "Hola, quiero un billete de ida.",
-    audioStats: AudioStatsFixtures.defaults
-  },
+const TurnSubmissionDefaults = {
+  roomId: "room-test",
+  turnId: "turn-test",
+  templateId: "tpl-test",
+  turnIndex: 0,
+  speakerUserId: "user-test",
+  transcript: "Hola, quiero un billete de ida.",
+  audioStats: AudioStatsFixtures.defaults
+};
 
-  make: (overrides: Partial<typeof TurnSubmissionFixtures.defaults> = {}) =>
-    new TurnSubmission({ ...TurnSubmissionFixtures.defaults, ...overrides }),
+export const TurnSubmissionFixtures = {
+  defaults: TurnSubmissionDefaults,
+
+  make: (overrides: Partial<typeof TurnSubmissionDefaults> = {}) =>
+    new TurnSubmission({ ...TurnSubmissionDefaults, ...overrides }),
 
   /** Generate unique IDs for testing */
-  unique: (overrides: Partial<typeof TurnSubmissionFixtures.defaults> = {}) => {
+  unique: (overrides: Partial<typeof TurnSubmissionDefaults> = {}) => {
     const uuid = crypto.randomUUID().slice(0, 8);
     return TurnSubmissionFixtures.make({
       roomId: `room-${uuid}`,
@@ -192,15 +194,17 @@ export const TurnSubmissionFixtures = {
 // QueueJob Fixtures
 // =============================================================================
 
-export const QueueJobFixtures = {
-  defaults: {
-    roomId: "room-test",
-    turnId: "turn-test",
-    status: "final" as const
-  },
+const QueueJobDefaults = {
+  roomId: "room-test",
+  turnId: "turn-test",
+  status: "final" as const
+};
 
-  make: (overrides: Partial<typeof QueueJobFixtures.defaults> = {}) =>
-    new QueueJob({ ...QueueJobFixtures.defaults, ...overrides }),
+export const QueueJobFixtures = {
+  defaults: QueueJobDefaults,
+
+  make: (overrides: Partial<typeof QueueJobDefaults> = {}) =>
+    new QueueJob({ ...QueueJobDefaults, ...overrides }),
 
   /** Final status - ready for scoring */
   final: (roomId: string, turnId: string) =>
