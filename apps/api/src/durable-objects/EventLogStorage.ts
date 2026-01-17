@@ -2,10 +2,14 @@ import type { SqlStorage } from "@cloudflare/workers-types";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
 import { layerSubtle as EventLogEncryptionLayer } from "@effect/experimental/EventLogEncryption";
 import * as SqlEventLogServer from "@effect/sql/SqlEventLogServer";
-import { SqliteClient as DoSqliteClient } from "@effect/sql-sqlite-do";
 import * as Config from "effect/Config";
-import { Effect, Layer } from "effect";
+import { Layer } from "effect";
+import { layerConfig as DoSqliteNoTxLayerConfig } from "./db/DoSqliteClientNoTx";
 
+/**
+ * Create the EventLogServer.Storage layer.
+ * Uses SqlEventLogServer which creates tables for remote sync.
+ */
 export const makeEventLogStorageLayer = (options?: {
   readonly entryTablePrefix?: string;
   readonly remoteIdTable?: string;
@@ -15,6 +19,13 @@ export const makeEventLogStorageLayer = (options?: {
     Layer.provide(EventLogEncryptionLayer)
   );
 
+/**
+ * Create DO SQLite EventLog storage layer.
+ *
+ * Uses the no-tx client because SqlEventLogServer.makeStorage() uses transactions
+ * (INSERT with ON CONFLICT), and Cloudflare DO SQLite doesn't support direct
+ * BEGIN/COMMIT/ROLLBACK statements.
+ */
 export const makeDoSqliteEventLogStorageLayer = (
   storage: SqlStorage,
   options?: {
@@ -24,9 +35,14 @@ export const makeDoSqliteEventLogStorageLayer = (
   }
 ) =>
   makeEventLogStorageLayer(options).pipe(
-    Layer.provide(DoSqliteClient.layerConfig(Config.succeed({ db: storage })))
+    Layer.provide(DoSqliteNoTxLayerConfig(Config.succeed({ db: storage })))
   );
 
+/**
+ * Create DO SQLite EventLog runtime layer with all dependencies.
+ *
+ * Uses the no-tx client for DO SQLite compatibility.
+ */
 export const makeDoSqliteEventLogRuntimeLayer = (
   storage: SqlStorage,
   options?: {
@@ -35,7 +51,7 @@ export const makeDoSqliteEventLogRuntimeLayer = (
     readonly insertBatchSize?: number;
   }
 ) => {
-  const sqliteLayer = DoSqliteClient.layerConfig(Config.succeed({ db: storage }));
+  const sqliteLayer = DoSqliteNoTxLayerConfig(Config.succeed({ db: storage }));
   const storageLayer = makeEventLogStorageLayer(options).pipe(Layer.provide(sqliteLayer));
   // Include encryption layer for functions that directly use EventLogEncryption
   return Layer.mergeAll(sqliteLayer, storageLayer, EventLogEncryptionLayer);

@@ -63,20 +63,40 @@ const handleCorsPreflight = (method: string): Response | null => {
 // ============================================================================
 // Application Layer
 // ============================================================================
-const makeAppLayer = (env: CloudflareEnv) => {
+
+/**
+ * Base layer for HTTP handlers (createRoom, submitTurn, uploadAudio).
+ * Does NOT include LanguageReview - that's only needed by scoring.
+ */
+const makeHttpLayer = (env: CloudflareEnv) => {
   const envLayer = Layer.succeed(Env, env);
-  const baseLayer = Layer.mergeAll(
+  return Layer.mergeAll(
     DbLive,
     TurnQueueLive,
     RoomDoClientLive,
     RoomIdGeneratorLive,
     TurnstileLive,
-    AudioBucketLive,
+    AudioBucketLive
+  ).pipe(Layer.provideMerge(envLayer));
+};
+
+/**
+ * Full layer for queue consumer (includes scoring + language review).
+ * LanguageReview requires GOOGLE_AI_API_KEY secret.
+ */
+const makeQueueLayer = (env: CloudflareEnv) => {
+  const envLayer = Layer.succeed(Env, env);
+  const baseLayer = Layer.mergeAll(
+    DbLive,
+    RoomDoClientLive,
     LanguageReviewGoogleLive
   ).pipe(Layer.provideMerge(envLayer));
   const scoringLayer = ScoringServiceLive.pipe(Layer.provideMerge(ScoringConfigLive));
   return Layer.mergeAll(baseLayer, scoringLayer);
 };
+
+// Legacy: keep for backwards compatibility
+const makeAppLayer = (env: CloudflareEnv) => makeHttpLayer(env);
 
 // ============================================================================
 // Request Helpers
@@ -229,7 +249,7 @@ export default {
 
   async queue(batch: MessageBatch, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> {
     void ctx; // Available for background work if needed
-    const appLayer = makeAppLayer(env);
+    const queueLayer = makeQueueLayer(env);
     const program = Effect.gen(function* () {
       const db = yield* Db;
       const consumer = yield* makeTurnScoringConsumer;
@@ -273,7 +293,7 @@ export default {
           )
         )
       );
-    }).pipe(Effect.provide(appLayer));
+    }).pipe(Effect.provide(queueLayer));
     await Effect.runPromise(program);
   }
 };

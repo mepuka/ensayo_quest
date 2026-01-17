@@ -14,6 +14,7 @@ import { Env, type CloudflareEnv } from "../services/Env.js";
 import { makeDoSqliteEventLogStorageLayer } from "./EventLogStorage";
 import { decodeRoomEventEnvelopeMsgPack, type RoomEvent } from "../domain/RoomProtocol";
 import { SqliteClient as DoSqliteClient } from "@effect/sql-sqlite-do";
+import { layerConfig as DoSqliteNoTxLayerConfig } from "./db/DoSqliteClientNoTx";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
@@ -66,24 +67,34 @@ interface WebSocketSessionAttachment {
 // =============================================================================
 
 /**
+ * Create a minimal SqlClient layer for schema migrations.
+ * Used by blockConcurrencyWhile to apply schema BEFORE the full domain layer.
+ */
+const makeSqliteOnlyLayer = (storage: SqlStorage) =>
+  DoSqliteClient.layerConfig(Config.succeed({ db: storage }));
+
+/**
  * Create the full runtime layer for the room domain.
  * Includes EventLog, handlers, state persistence, SQL client, and TurnQueue.
  *
- * The SqlClient is merged into the output so it's available for schema migrations.
+ * IMPORTANT: This layer uses DoSqliteNoTxLayerConfig which uses no-op transaction
+ * commands (SELECT 1 instead of BEGIN/COMMIT/ROLLBACK). This is required because
+ * Cloudflare DO SQLite doesn't support direct SQL transaction statements - it
+ * requires using transactionSync() or transaction() methods instead.
+ *
+ * The schema migration must run BEFORE this layer is constructed, which is why
+ * we use a separate SqlClient-only layer for applyRoomSchema.
  */
 const makeRoomDomainLayer = (storage: SqlStorage, cloudflareEnv: CloudflareEnv) => {
-  const sqliteLayer = DoSqliteClient.layerConfig(Config.succeed({ db: storage }));
+  // Use no-tx client for domain layer since SqlEventJournal uses withTransaction
+  const sqliteLayer = DoSqliteNoTxLayerConfig(Config.succeed({ db: storage }));
   const envLayer = Layer.succeed(Env, cloudflareEnv);
   const turnQueueLayer = TurnQueueLive.pipe(Layer.provide(envLayer));
 
-  // Merge SqlClient into output so it's available for applyRoomSchema
-  // Also provide TurnQueue for AudioUploaded handler (Architecture Invariant #9)
-  return Layer.mergeAll(
-    RoomDomainLive.pipe(
-      Layer.provide(sqliteLayer),
-      Layer.provide(turnQueueLayer)
-    ),
-    sqliteLayer
+  // Provide TurnQueue for AudioUploaded handler (Architecture Invariant #9)
+  return RoomDomainLive.pipe(
+    Layer.provide(sqliteLayer),
+    Layer.provide(turnQueueLayer)
   );
 };
 
@@ -246,15 +257,31 @@ export class RoomDurableObject extends EventLogDurableObject {
     // Store room ID from DO state
     this.roomId = state.id.toString();
 
-    // Create runtime with full domain layer
+    // blockConcurrencyWhile ensures no requests are processed until schema is applied
+    // CRITICAL: Apply schema using a MINIMAL SqlClient-only layer BEFORE creating
+    // the full domain runtime. This prevents SqlEventLogServer from trying to
+    // create/query tables before our schema tables exist.
+    state.blockConcurrencyWhile(async () => {
+      console.log("[RoomDO] Starting schema migration for room:", this.roomId);
+      const schemaRuntime = ManagedRuntime.make(
+        makeSqliteOnlyLayer(storage).pipe(Layer.orDie)
+      );
+      try {
+        await schemaRuntime.runPromise(applyRoomSchema);
+        console.log("[RoomDO] Schema migration completed for room:", this.roomId);
+      } catch (e) {
+        console.error("[RoomDO] Schema migration FAILED:", e);
+        throw e;
+      } finally {
+        await schemaRuntime.dispose();
+      }
+    });
+
+    // Create runtime with full domain layer AFTER schema is applied
+    console.log("[RoomDO] Creating domain runtime for room:", this.roomId);
     this.roomRuntime = ManagedRuntime.make(
       makeRoomDomainLayer(storage, env).pipe(Layer.orDie)
     );
-
-    // blockConcurrencyWhile ensures no requests are processed until schema is applied
-    state.blockConcurrencyWhile(async () => {
-      await this.roomRuntime.runPromise(applyRoomSchema);
-    });
   }
 
   /**
@@ -276,20 +303,24 @@ export class RoomDurableObject extends EventLogDurableObject {
 
     const body = new Uint8Array(await request.arrayBuffer());
     const envelope = decodeRoomEventEnvelopeMsgPack(body);
+    console.log("[RoomDO] Processing event:", envelope.event.type, "for room:", envelope.roomId);
 
     // Use EventLog.write() for atomic event + state persistence
     // This satisfies Invariant #3: Event append + projections are atomic
     const result = await this.roomRuntime.runPromiseExit(
       convertToPayload(envelope.roomId, envelope.event)
     );
+    console.log("[RoomDO] Event processing result:", result._tag);
 
     // Handle success/failure with appropriate HTTP responses using Effect's Exit
     return pipe(
       result,
       Exit.match({
         onSuccess: () => new Response(null, { status: 204 }),
-        onFailure: (cause) =>
-          pipe(
+        onFailure: (cause) => {
+          // Log the full cause for debugging
+          console.error("[RoomDO] Event processing failure:", Cause.pretty(cause));
+          return pipe(
             Cause.failureOption(cause),
             Option.match({
               onNone: () =>
@@ -323,7 +354,8 @@ export class RoomDurableObject extends EventLogDurableObject {
                   Match.exhaustive
                 )
             })
-          )
+          );
+        }
       })
     );
   }
