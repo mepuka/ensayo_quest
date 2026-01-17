@@ -98,8 +98,8 @@ export type UploadAudioResult = Schema.Schema.Type<typeof TurnAudioResponse>;
  *
  * @see docs/ARCHITECTURE.md - Invariant #10: Room creation idempotent via requestId
  */
-export const createRoomFn = httpRuntime.fn<CreateRoomInput>()((input: CreateRoomInput) =>
-  Effect.gen(function* () {
+export const createRoomFn = httpRuntime.fn<CreateRoomInput>()(
+  Effect.fnUntraced(function* (input: CreateRoomInput) {
     const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
 
     const request = HttpClientRequest.post("/api/rooms").pipe(
@@ -127,8 +127,8 @@ export const createRoomFn = httpRuntime.fn<CreateRoomInput>()((input: CreateRoom
  *
  * @see docs/ARCHITECTURE.md - Invariant #2: All commands are idempotent via requestId
  */
-export const submitTurnFn = httpRuntime.fn<SubmitTurnInput>()((input: SubmitTurnInput) =>
-  Effect.gen(function* () {
+export const submitTurnFn = httpRuntime.fn<SubmitTurnInput>()(
+  Effect.fnUntraced(function* (input: SubmitTurnInput) {
     const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
 
     const request = HttpClientRequest.post(`/api/rooms/${input.roomId}/turns`).pipe(
@@ -149,8 +149,8 @@ export const submitTurnFn = httpRuntime.fn<SubmitTurnInput>()((input: SubmitTurn
  * @see docs/ARCHITECTURE.md - Invariant #2: All commands are idempotent via requestId
  * @see docs/ARCHITECTURE.md - Invariant #9: Scoring enqueue gated on AudioUploaded
  */
-export const uploadAudioFn = httpRuntime.fn<UploadAudioInput>()((input: UploadAudioInput) =>
-  Effect.gen(function* () {
+export const uploadAudioFn = httpRuntime.fn<UploadAudioInput>()(
+  Effect.fnUntraced(function* (input: UploadAudioInput) {
     const client = (yield* HttpClient.HttpClient).pipe(HttpClient.filterStatusOk);
 
     const request = HttpClientRequest.post(`/api/turns/${input.turnId}/audio`).pipe(

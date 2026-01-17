@@ -71,10 +71,9 @@ export interface SqliteClientNoTxConfig {
 /**
  * @category constructor
  */
-export const make = (
+export const make = Effect.fn("DoSqliteClientNoTx.make")(function* (
   options: SqliteClientNoTxConfig
-): Effect.Effect<SqliteClientNoTx, never, Scope.Scope | Reactivity.Reactivity> =>
-  Effect.gen(function* () {
+) {
     const compiler = Statement.makeCompilerSqlite(options.transformQueryNames);
     const transformRows = options.transformResultNames
       ? Statement.defaultTransforms(options.transformResultNames).array

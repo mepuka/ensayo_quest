@@ -122,8 +122,7 @@ const makeVadService = Effect.gen(function* () {
   );
 
   const events = Stream.asyncScoped<VadEvent, VadInitError>(
-    (emit) =>
-      Effect.gen(function* () {
+    Effect.fnUntraced(function* (emit) {
         // Dynamic import for browser-only code
         // This prevents SSR/Node.js from attempting to load browser APIs
         const VadWeb = yield* Effect.tryPromise({
@@ -160,8 +159,8 @@ const makeVadService = Effect.gen(function* () {
 
         // Register cleanup via addFinalizer - this is how asyncScoped handles cleanup
         // The cleanup runs when the stream's scope ends
-        yield* Effect.addFinalizer(() =>
-          Effect.gen(function* () {
+        yield* Effect.addFinalizer(
+          Effect.fnUntraced(function* () {
             yield* Effect.logInfo("VadService cleaning up");
             // pause() stops processing but keeps resources
             yield* Effect.promise(() => vad.pause());
