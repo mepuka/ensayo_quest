@@ -34,7 +34,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const proxyRequest = new Request(targetUrl.toString(), {
     method: request.method,
     headers: request.headers,
-    body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+    body: request.method !== "GET" && request.method !== "HEAD" ? request.body : null,
     redirect: "manual"
   });
 
@@ -51,7 +51,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     const fallbackRequest = new Request(fallbackUrl.toString(), {
       method: request.method,
       headers: request.headers,
-      body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+      body: request.method !== "GET" && request.method !== "HEAD" ? request.body : null,
       redirect: "manual"
     });
 
