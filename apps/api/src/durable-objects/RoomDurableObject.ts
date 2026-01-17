@@ -43,9 +43,12 @@ import {
   type RoomDomainContext
 } from "../domain/index.js";
 import { TurnQueueLive } from "../services/TurnQueue.js";
-import { EventJournalError, RemoteId } from "@effect/experimental/EventJournal";
+import { EventJournalError, RemoteId, Entry, makeEntryId } from "@effect/experimental/EventJournal";
 import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventLogServer from "@effect/experimental/EventLogServer";
+import { EventLogEncryption, EncryptedRemoteEntry } from "@effect/experimental/EventLogEncryption";
+import * as Redacted from "effect/Redacted";
+import { encodeRoomEventMsgPack } from "../domain/RoomProtocol";
 
 // =============================================================================
 // WebSocket Session Attachment Type
@@ -61,6 +64,24 @@ interface WebSocketSessionAttachment {
   roomId: string;
   connectedAt: number;
 }
+
+// =============================================================================
+// Room Identity Helper
+// =============================================================================
+
+/**
+ * Create a deterministic identity for a room.
+ * Uses SHA-256 of roomId to derive the private key, ensuring consistent
+ * encryption/decryption across server and clients.
+ */
+const makeRoomIdentity = Effect.fn("RoomDurableObject.makeRoomIdentity")(function* (roomId: string) {
+  const encryption = yield* EventLogEncryption;
+  const key = yield* encryption.sha256(new TextEncoder().encode(roomId));
+  return EventLog.Identity.of({
+    publicKey: roomId,
+    privateKey: Redacted.make(key)
+  });
+});
 
 // =============================================================================
 // Runtime Layer Construction
@@ -285,6 +306,82 @@ export class RoomDurableObject extends EventLogDurableObject {
   }
 
   /**
+   * Broadcast an event to all connected WebSocket clients.
+   *
+   * This bridges server-side EventLog.write() to WebSocket clients by:
+   * 1. Encrypting the event using room identity
+   * 2. Encoding as EventLogRemote.Changes message
+   * 3. Sending to all connected WebSockets
+   *
+   * Uses this.runtime (from EventLogDurableObject parent) which has
+   * EventLogEncryption and EventLogServer.Storage services.
+   */
+  private broadcastEventToClients(event: RoomEvent): void {
+    const roomId = this.roomId;
+    const webSockets = this.ctx.getWebSockets();
+
+    if (webSockets.length === 0) {
+      console.log("[RoomDO] No WebSocket clients connected, skipping broadcast");
+      return;
+    }
+
+    console.log("[RoomDO] Broadcasting event to", webSockets.length, "clients:", event.type);
+
+    this.runtime.runFork(
+      Effect.gen(function* () {
+        const encryption = yield* EventLogEncryption;
+        const identity = yield* makeRoomIdentity(roomId);
+
+        // Create entry from event
+        const payload = encodeRoomEventMsgPack(event);
+        const entry = new Entry({
+          id: makeEntryId(),
+          event: event.type,
+          primaryKey: roomId,
+          payload
+        });
+
+        // Encrypt the entry
+        const encrypted = yield* encryption.encrypt(identity, [entry]);
+
+        // Create EncryptedRemoteEntry with sequence number
+        // Note: sequence is assigned per-client from their perspective, using 0 for broadcast
+        const encryptedEntries = encrypted.encryptedEntries.map(
+          (encryptedEntry, index) =>
+            EncryptedRemoteEntry.make({
+              sequence: index, // Will be ignored by client, they use their local sequence
+              entryId: entry.id,
+              iv: encrypted.iv,
+              encryptedEntry
+            })
+        );
+
+        // Encode as Changes response
+        const changes = EventLogRemote.encodeResponse(
+          new EventLogRemote.Changes({
+            publicKey: identity.publicKey,
+            entries: encryptedEntries
+          })
+        );
+
+        // Send to all connected WebSockets
+        for (const ws of webSockets) {
+          try {
+            ws.send(changes);
+          } catch (e) {
+            yield* Effect.logWarning("Failed to send to WebSocket", { error: String(e) });
+          }
+        }
+
+        yield* Effect.logInfo("Broadcast complete", {
+          eventType: event.type,
+          clientCount: webSockets.length
+        });
+      }).pipe(Effect.catchAllCause(Effect.logError))
+    );
+  }
+
+  /**
    * Handle fetch requests, including WebSocket upgrade with session validation.
    *
    * Architecture Invariant #7: WebSocket handlers validate session before processing.
@@ -316,7 +413,12 @@ export class RoomDurableObject extends EventLogDurableObject {
     return pipe(
       result,
       Exit.match({
-        onSuccess: () => new Response(null, { status: 204 }),
+        onSuccess: () => {
+          // Broadcast event to connected WebSocket clients
+          // This bridges server-side EventLog.write() to the WebSocket sync protocol
+          this.broadcastEventToClients(envelope.event);
+          return new Response(null, { status: 204 });
+        },
         onFailure: (cause) => {
           // Log the full cause for debugging
           console.error("[RoomDO] Event processing failure:", Cause.pretty(cause));

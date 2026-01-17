@@ -146,9 +146,29 @@ export const submitTurn = Effect.fn("handlers.submitTurn")(function* (
 
   // Idempotency check: return cached turnId if request already processed
   // Architecture Invariant #2: All commands are idempotent via requestId
+  // IMPORTANT: Always re-emit TurnAccepted on retry (atomicity gap recovery)
+  // DB succeeded but DO event might have failed on previous attempt
   const existingTurnId = yield* db.getTurnByRequestId(roomId, submission.requestId);
   if (existingTurnId) {
-    yield* Effect.logDebug(`Returning cached turnId for requestId ${submission.requestId}`);
+    yield* Effect.logDebug(`Returning cached turnId for requestId ${submission.requestId}, re-emitting TurnAccepted`);
+
+    // Fetch original turn to get transcript for event payload
+    const existingTurn = yield* db.getTurnSubmission(existingTurnId);
+
+    // Re-emit TurnAccepted event (same pattern as uploadTurnAudio and createRoom)
+    // DO handler has its own idempotency guard to prevent duplicate state changes
+    yield* roomDo.emitRoomEvent(
+      roomId,
+      new TurnAccepted({
+        type: "TurnAccepted",
+        turnId: existingTurnId,
+        roomId,
+        playerId: existingTurn.speakerUserId,
+        transcript: existingTurn.transcript,
+        timestamp: Date.now()
+      })
+    );
+
     return { turnId: existingTurnId, status: "processing" as const };
   }
 
@@ -178,7 +198,14 @@ export const submitTurn = Effect.fn("handlers.submitTurn")(function* (
   // NOTE: Scoring will be enqueued when client uploads audio (AudioUploaded event)
   yield* roomDo.emitRoomEvent(
     roomId,
-    new TurnAccepted({ type: "TurnAccepted", turnId })
+    new TurnAccepted({
+      type: "TurnAccepted",
+      turnId,
+      roomId,
+      playerId: derived.speakerUserId,
+      transcript: submission.transcript,
+      timestamp: Date.now()
+    })
   );
   return { turnId, status: "processing" as const };
 });

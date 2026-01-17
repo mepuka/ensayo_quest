@@ -57,7 +57,11 @@ export class RoomSnapshot extends Schema.Class<RoomSnapshot>("RoomSnapshot")({
 
 export class TurnAccepted extends Schema.Class<TurnAccepted>("TurnAccepted")({
   type: Schema.Literal("TurnAccepted"),
-  turnId: Schema.String
+  turnId: Schema.String,
+  roomId: Schema.String,
+  playerId: Schema.String,
+  transcript: Schema.String,
+  timestamp: Schema.Number
 }) {}
 
 export class ScoreUpdated extends Schema.Class<ScoreUpdated>("ScoreUpdated")({
@@ -291,7 +295,14 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
     }
     case "TurnAccepted": {
       const payload = payloadDecoders.TurnAccepted(entry.payload);
-      return { type: "TurnAccepted", turnId: payload.turnId };
+      return {
+        type: "TurnAccepted",
+        turnId: payload.turnId,
+        roomId: payload.roomId,
+        playerId: payload.playerId,
+        transcript: payload.transcript,
+        timestamp: payload.timestamp
+      };
     }
     case "ScoreUpdated": {
       const payload = payloadDecoders.ScoreUpdated(entry.payload);

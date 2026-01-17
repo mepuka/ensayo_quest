@@ -146,8 +146,9 @@ export function useTurn(): UseTurnResult {
     });
   }, [canSubmit, asrResult, roomId, submit]);
 
-  // Derive currentPrompt from state
-  const currentPrompt = state?.seedPrompt ?? null;
+  // Derive currentPrompt: latest NPC prompt if available, otherwise seedPrompt
+  // After a turn is scored, evaluation.nextPrompt contains the next conversation prompt
+  const currentPrompt = state?.turn.evaluation?.nextPrompt ?? state?.seedPrompt ?? null;
 
   return {
     currentPrompt,

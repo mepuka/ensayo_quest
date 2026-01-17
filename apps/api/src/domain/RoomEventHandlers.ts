@@ -848,22 +848,30 @@ export const RoomEventHandlersLive = EventLog.group(
           return;
         }
 
-        // Record idempotency BEFORE enqueuing (prevents race)
-        yield* idempotency.recordEnqueued(payload.turnId, payload.audioKey);
-
-        // Fire-and-forget: enqueue scoring
-        // Effect.fork detaches - queue failure won't fail event handler
-        yield* Effect.fork(
-          queue.enqueueTurn({
-            roomId: payload.roomId,
-            turnId: payload.turnId,
-            status: "ready" // Audio exists, ready for scoring
-          }).pipe(
-            Effect.tapError((e) =>
-              Effect.logError(`Queue enqueue failed for turn ${payload.turnId}`, e)
-            )
-          )
+        // Enqueue scoring FIRST, then record idempotency on success
+        // This ensures retry is possible if enqueue fails
+        // CF Queues are durable - once enqueued, message is guaranteed
+        const enqueueResult = yield* queue.enqueueTurn({
+          roomId: payload.roomId,
+          turnId: payload.turnId,
+          status: "ready" // Audio exists, ready for scoring
+        }).pipe(
+          Effect.tapError((e) =>
+            Effect.logError(`Queue enqueue failed for turn ${payload.turnId}`, e)
+          ),
+          Effect.either // Convert to Either so we can handle failure without failing handler
         );
+
+        // Only record idempotency if enqueue succeeded
+        // If enqueue failed, retry will be allowed (no idempotency record)
+        if (enqueueResult._tag === "Right") {
+          yield* idempotency.recordEnqueued(payload.turnId, payload.audioKey);
+        } else {
+          yield* Effect.logWarning(
+            `Scoring enqueue failed for turn ${payload.turnId}, retry will be allowed`,
+            { error: enqueueResult.left }
+          );
+        }
 
         // Update state projection
         const newState = new RoomProjection({
