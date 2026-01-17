@@ -104,11 +104,12 @@ export interface TranscriptionServiceImpl {
   /**
    * Transcribe audio to text.
    * Model is loaded lazily on first call (single-flight).
+   * Can fail with ModelLoadError (on first call) or TranscriptionError.
    */
   readonly transcribe: (
     audio: Float32Array,
     sampleRate: number
-  ) => Effect.Effect<string, TranscriptionError>;
+  ) => Effect.Effect<string, ModelLoadError | TranscriptionError>;
 
   /**
    * Stream of loading progress events.

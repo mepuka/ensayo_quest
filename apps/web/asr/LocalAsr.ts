@@ -9,8 +9,10 @@ import {
   createWorkerClient,
   type AsrWorker,
   encodeTranscribeRequest,
-  type TranscribeRequest,
-  type TranscribeResponse
+  encodePreloadRequest,
+  type WorkerRequest,
+  type TranscribeResponse,
+  type PreloadResponse
 } from "./worker/WorkerClient";
 import { TranscriptionFailed } from "./errors";
 import { appendAudioBuffer } from "./audioBuffer";
@@ -51,8 +53,13 @@ export const makeLocalAsr = Effect.gen(function* () {
 
   // Worker spawned in service scope - will be cleaned up when layer scope closes
   const worker = yield* manager
-    .spawn<TranscribeRequest, TranscribeResponse, TranscriptionFailed>({
-      encode: (message) => Effect.succeed(encodeTranscribeRequest(message))
+    .spawn<WorkerRequest, TranscribeResponse | PreloadResponse, TranscriptionFailed>({
+      encode: (message) =>
+        Effect.succeed(
+          message.type === "preload"
+            ? encodePreloadRequest(message)
+            : encodeTranscribeRequest(message)
+        )
     })
     .pipe(Effect.provideService(PlatformWorker.Spawner, spawner));
   const client = createWorkerClient(worker);
