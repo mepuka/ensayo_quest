@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { WorkerRunner } from "@effect/platform";
 import { BrowserWorkerRunner } from "@effect/platform-browser";
 import { pipeline, env } from "@huggingface/transformers";
+// Legacy types from WorkerClient (which re-exports new protocol types)
 import {
   decodeWorkerRequest,
   encodeTranscribeResponse,
@@ -13,11 +14,13 @@ import {
   TranscribeResponse,
   type WorkerRequest
 } from "./WorkerClient";
+// Phase 1+ TaggedRequest protocol (for future migration)
+import type { ASRWorkerRequest, Preload, Transcribe } from "./protocol";
 import { TranscriptionFailed } from "../errors";
 
 // Configure HF Transformers environment for browser
 env.allowRemoteModels = true;
-// Use local WASM files from /vad/onnx/ (served by dev.ts)
+// Use local WASM files from /vad/onnx/ (served by dev server and prod build)
 if (env.backends.onnx.wasm) {
   env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
 }
@@ -119,7 +122,11 @@ const encodeOutput = (_request: WorkerRequest, output: TranscribeResponse | Prel
 const runnerLayer = WorkerRunner.layer(handleRequest, {
   decode: (message) => Effect.succeed(decodeWorkerRequest(message)),
   encodeOutput,
-  encodeError: (_request, error) => Effect.succeed(error)
+  // Serialize error to plain object for postMessage compatibility
+  encodeError: (_request, error) => Effect.succeed({
+    _tag: "TranscriptionFailed",
+    reason: error instanceof TranscriptionFailed ? error.reason : String(error)
+  })
 });
 
 Effect.runPromise(WorkerRunner.launch(runnerLayer).pipe(Effect.provide(BrowserWorkerRunner.layer)));

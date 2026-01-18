@@ -3,6 +3,31 @@ import * as Schema from "effect/Schema";
 import { Worker } from "@effect/platform";
 import { TranscriptionFailed } from "../errors";
 
+// -----------------------------------------------------------------------------
+// Re-export new TaggedRequest protocol types
+// These are the source of truth for Phase 1+ serialized worker communication.
+// -----------------------------------------------------------------------------
+export {
+  // TaggedRequest classes (new protocol)
+  Preload,
+  Transcribe,
+  // Response/Event types
+  TranscribeResult,
+  PreloadComplete,
+  PreloadProgress as PreloadProgressEvent,
+  PreloadEvent,
+  // Schemas
+  ASRConfigPayload,
+  ASRWorkerRequest,
+  TransferableFloat32Array
+} from "./protocol";
+
+// -----------------------------------------------------------------------------
+// Legacy Types (Phase 0 backward compatibility)
+// These support the current non-serialized worker implementation.
+// Will be removed in Phase 2 when we complete the migration.
+// -----------------------------------------------------------------------------
+
 const Float32ArraySchema: Schema.Schema<Float32Array> = Schema.declare(
   (input): input is Float32Array => input instanceof Float32Array,
   {
@@ -27,6 +52,7 @@ export class TranscribeResponse extends Schema.Class<TranscribeResponse>("Transc
  * Sent during app initialization for better UX.
  *
  * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+ * @deprecated Use Preload from ./protocol for Phase 1+ implementation.
  */
 export class PreloadRequest extends Schema.Class<PreloadRequest>("PreloadRequest")({
   type: Schema.Literal("preload")
@@ -35,6 +61,7 @@ export class PreloadRequest extends Schema.Class<PreloadRequest>("PreloadRequest
 /**
  * Progress event during model preloading.
  * Emitted multiple times as model files are downloaded.
+ * @deprecated Use PreloadProgressEvent (re-exported from ./protocol) for Phase 1+.
  */
 export class PreloadProgress extends Schema.Class<PreloadProgress>("PreloadProgress")({
   type: Schema.Literal("preload_progress"),
@@ -42,7 +69,8 @@ export class PreloadProgress extends Schema.Class<PreloadProgress>("PreloadProgr
     Schema.Literal("initiate"),
     Schema.Literal("download"),
     Schema.Literal("progress"),
-    Schema.Literal("done")
+    Schema.Literal("done"),
+    Schema.Literal("ready")
   ),
   file: Schema.optional(Schema.String),
   progress: Schema.optional(Schema.Number),
@@ -53,6 +81,7 @@ export class PreloadProgress extends Schema.Class<PreloadProgress>("PreloadProgr
 /**
  * Response after model preload completes.
  * Status indicates whether model was already loaded or newly loaded.
+ * @deprecated Use PreloadComplete from ./protocol for Phase 1+.
  */
 export class PreloadResponse extends Schema.Class<PreloadResponse>("PreloadResponse")({
   type: Schema.Literal("preload_complete"),
