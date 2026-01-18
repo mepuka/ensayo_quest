@@ -18,7 +18,9 @@ import { TranscriptionFailed } from "../errors";
 // Configure HF Transformers environment for browser
 env.allowRemoteModels = true;
 // Use local WASM files from /vad/onnx/ (served by dev.ts)
-env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
+}
 
 type TranscriberOutput = { text: string } | Array<{ text: string }>;
 type TranscriberFn = (
