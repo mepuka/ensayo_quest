@@ -93,8 +93,8 @@ export const preloadModelFn = recordingRuntime.fn<void>()(
 
     // Preload the model with error handling
     const preloadResult = yield* localAsr.preload().pipe(
-      Effect.tapError((error) =>
-        Effect.gen(function* () {
+      Effect.tapError(
+        Effect.fnUntraced(function* (error) {
           yield* Atom.set(modelLoadingAtom, {
             status: "error",
             error: String(error)
@@ -159,8 +159,9 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
     let speechStartTime: number | null = null;
 
     // Fork the VAD event consumer
-    const fiber = yield* Stream.runForEach(vad.events, (event: VadServiceEvent) =>
-      Effect.gen(function* () {
+    const fiber = yield* Stream.runForEach(
+      vad.events,
+      Effect.fnUntraced(function* (event: VadServiceEvent) {
         switch (event._tag) {
           case "SpeechStart": {
             speechStartTime = event.timestamp;
@@ -195,8 +196,8 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
 
             // Use LocalAsr's transcribe method for direct transcription
             const result = yield* localAsr.transcribe(event.audio, sampleRate).pipe(
-              Effect.catchAll((error) =>
-                Effect.gen(function* () {
+              Effect.catchAll(
+                Effect.fnUntraced(function* (error) {
                   yield* Effect.logError("Transcription failed", { error: String(error) });
                   return { transcript: "" };
                 })
@@ -228,8 +229,8 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
         }
       })
     ).pipe(
-      Effect.tapError((error) =>
-        Effect.gen(function* () {
+      Effect.tapError(
+        Effect.fnUntraced(function* (error) {
           yield* Atom.set(vadSessionAtom, {
             status: "error",
             error: String(error)
