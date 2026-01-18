@@ -34,7 +34,7 @@ const createMockWorkerLayer = (handlers: {
 
   const mockWorkerManager: Worker.WorkerManager = {
     [Worker.WorkerManagerTypeId]: Worker.WorkerManagerTypeId,
-    spawn: <I, O, E>(_options: Worker.Options<I>) => {
+    spawn: <I, O, E>(_options: any) => {
       workerInstanceCount++;
       return Effect.succeed({
         id: workerInstanceCount,

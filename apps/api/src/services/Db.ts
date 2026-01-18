@@ -375,28 +375,27 @@ export const DbLive = Layer.effect(
           Date.now()
         ]),
       // Scenario template seeding
-      insertScenarioTemplate: (input: {
+      insertScenarioTemplate: Effect.fn("Db.insertScenarioTemplate")(function* (input: {
         template: ScenarioTemplate;
         region: string;
         register: string;
-      }) =>
-        Effect.fn("Db.insertScenarioTemplate")(function* () {
-          const encoded = encodeScenarioTemplate(input.template);
-          const templateJson = stableJsonStringify(encoded);
-          const templateVersion = yield* hashSha256(templateJson).pipe(
-            Effect.mapError((cause) => new DbError({ reason: String(cause) }))
-          );
-          yield* run(queries.insertScenarioTemplate, [
-            input.template.templateId,
-            input.template.topic,
-            input.template.level,
-            input.region,
-            input.register,
-            templateVersion,
-            templateJson,
-            Date.now()
-          ]);
-        })
+      }) {
+        const encoded = encodeScenarioTemplate(input.template);
+        const templateJson = stableJsonStringify(encoded);
+        const templateVersion = yield* hashSha256(templateJson).pipe(
+          Effect.mapError((cause) => new DbError({ reason: String(cause) }))
+        );
+        yield* run(queries.insertScenarioTemplate, [
+          input.template.templateId,
+          input.template.topic,
+          input.template.level,
+          input.region,
+          input.register,
+          templateVersion,
+          templateJson,
+          Date.now()
+        ]);
+      })
     };
   })
 );

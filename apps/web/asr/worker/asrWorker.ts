@@ -9,7 +9,8 @@
  *
  * @module
  */
-import { Cause, Deferred, Effect, Either, Exit, FiberId, Ref, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, FiberId, Ref, Stream } from "effect";
+import * as Option from "effect/Option";
 import { WorkerRunner } from "@effect/platform";
 import { BrowserWorkerRunner } from "@effect/platform-browser";
 import { pipeline, env } from "@huggingface/transformers";
@@ -205,13 +206,13 @@ const ensureTranscriber = Effect.fn("ensureTranscriber")(function* (
 
         const cause = exit.cause;
         const interrupted = Cause.isInterruptedOnly(cause);
-        const error: TranscriptionFailed = Either.match(Cause.failureOrCause(cause), {
-          onRight: (failure) => failure,
-          onLeft: (other) =>
+        const error = Option.match(Cause.failureOption(cause), {
+          onSome: (failure) => failure,
+          onNone: () =>
             new TranscriptionFailed({
               reason: interrupted
                 ? "Transcriber load interrupted"
-                : Cause.pretty(other)
+                : Cause.pretty(cause)
             })
         });
 
@@ -263,7 +264,7 @@ const handlePreload = (_request: Preload): Stream.Stream<PreloadEvent, Transcrip
             emit.end();
           },
           onFailure: (error) => {
-            emit.failCause(Cause.fail(error));
+            emit.fail(error);
           }
         })
       )
