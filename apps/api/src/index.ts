@@ -48,7 +48,12 @@ const corsHeaders = {
 };
 
 // Apply CORS headers to any response - single point of CORS application
+// WebSocket upgrade responses (101) must be returned unchanged
 const withCors = (response: Response): Response => {
+  // WebSocket upgrades return 101 which can't be wrapped in new Response
+  if (response.status === 101 || response.webSocket) {
+    return response;
+  }
   const headers = new Headers(response.headers);
   Object.entries(corsHeaders).forEach(([key, value]) => headers.set(key, value));
   return new Response(response.body, {
