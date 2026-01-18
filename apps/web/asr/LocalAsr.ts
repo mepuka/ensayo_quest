@@ -96,10 +96,12 @@ export const makeLocalAsr = Effect.gen(function* () {
     yield* Ref.set(bufferRef, new Float32Array());
     // Worker is now guaranteed to exist (created eagerly in service scope)
     // Use executeEffect for single-response transcription
+    // Copy audio before transfer; transferables detach the original buffer.
+    const transferAudio = audio.slice();
     const response = yield* worker.executeEffect(
       new Transcribe({
         requestId: crypto.randomUUID(),
-        audio,
+        audio: transferAudio,
         sampleRate,
         config: undefined
       })
@@ -160,10 +162,12 @@ export const makeLocalAsr = Effect.gen(function* () {
    */
   const transcribe = (audio: Float32Array, sampleRate: number) =>
     Effect.gen(function* () {
+      // Copy audio before transfer; transferables detach the original buffer.
+      const transferAudio = audio.slice();
       const response = yield* worker.executeEffect(
         new Transcribe({
           requestId: crypto.randomUUID(),
-          audio,
+          audio: transferAudio,
           sampleRate,
           config: undefined
         })

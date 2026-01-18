@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Point to Tailwind config for content paths */
+@config "../tailwind.config.ts";
+
 @theme {
   /* shadcn/ui CSS variables - maps to Tailwind utility classes */
   --color-background: hsl(0 0% 100%);

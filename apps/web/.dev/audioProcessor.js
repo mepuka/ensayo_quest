@@ -7,7 +7,7 @@ class AudioProcessor extends AudioWorkletProcessor {
     }
     const channel = input[0];
     if (channel) {
-      this.port.postMessage(channel);
+      this.port.postMessage(channel.slice());
     }
     return true;
   }

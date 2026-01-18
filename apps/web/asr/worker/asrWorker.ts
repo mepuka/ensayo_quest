@@ -9,7 +9,7 @@
  *
  * @module
  */
-import { Deferred, Effect, Either, FiberId, Ref, Stream } from "effect";
+import { Cause, Deferred, Effect, Either, Exit, FiberId, Ref, Stream } from "effect";
 import { WorkerRunner } from "@effect/platform";
 import { BrowserWorkerRunner } from "@effect/platform-browser";
 import { pipeline, env } from "@huggingface/transformers";
@@ -185,19 +185,39 @@ const ensureTranscriber = (
       }
       case "Load": {
         // We won the race - perform the actual load
-        const result = yield* loadModel(onProgress).pipe(Effect.either);
+        // Ensure the deferred is completed on all exit paths to avoid deadlocks.
+        const exit = yield* Effect.uninterruptibleMask((restore) =>
+          restore(loadModel(onProgress)).pipe(Effect.exit)
+        );
 
-        if (Either.isLeft(result)) {
-          // Load failed - transition to Failed state and fail the deferred
-          yield* Ref.set(transcriberRef, { _tag: "Failed", error: result.left });
-          yield* Deferred.fail(action.deferred, result.left);
-          return yield* Effect.fail(result.left);
-        }
+        yield* Deferred.done(action.deferred, exit);
 
-        // Load succeeded - transition to Ready state and complete the deferred
-        yield* Ref.set(transcriberRef, { _tag: "Ready", transcriber: result.right });
-        yield* Deferred.succeed(action.deferred, result.right);
-        return { transcriber: result.right, loadStatus: "loaded" as const };
+        return yield* Exit.matchEffect(exit, {
+          onSuccess: (transcriber) =>
+            Ref.set(transcriberRef, { _tag: "Ready", transcriber }).pipe(
+              Effect.as({ transcriber, loadStatus: "loaded" as const })
+            ),
+          onFailure: (cause) => {
+            const interrupted = Cause.isInterruptedOnly(cause);
+            const error = Either.match(Cause.failureOrCause(cause), {
+              onRight: (failure) => failure,
+              onLeft: (other) =>
+                new TranscriptionFailed({
+                  reason: interrupted
+                    ? "Transcriber load interrupted"
+                    : Cause.pretty(other)
+                })
+            });
+
+            const nextState: TranscriberState = interrupted
+              ? { _tag: "Idle" }
+              : { _tag: "Failed", error };
+
+            return Ref.set(transcriberRef, nextState).pipe(
+              Effect.zipRight(Effect.fail(error))
+            );
+          }
+        });
       }
     }
   });

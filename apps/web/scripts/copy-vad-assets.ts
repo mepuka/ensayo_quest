@@ -33,11 +33,15 @@ async function copyVadAssets() {
     console.log(`  ${file}`);
   }
 
-  // Copy ONNX WASM files
-  console.log("Copying ONNX WASM files...");
+  // Copy ONNX WASM and MJS files
+  // Both .wasm binaries and .mjs module loaders are required for ONNX runtime
+  console.log("Copying ONNX WASM and MJS files...");
   const onnxFiles = await readdir(ONNX_SRC);
   const wasmFiles = onnxFiles.filter((f) => f.endsWith(".wasm"));
-  for (const file of wasmFiles) {
+  const mjsFiles = onnxFiles.filter(
+    (f) => f.startsWith("ort-wasm-simd-threaded") && f.endsWith(".mjs")
+  );
+  for (const file of [...wasmFiles, ...mjsFiles]) {
     const src = join(ONNX_SRC, file);
     const dest = join(DEST_ONNX, file);
     await copyFile(src, dest);

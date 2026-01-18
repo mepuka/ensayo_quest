@@ -54343,7 +54343,9 @@ class TranscriptionFailed extends TaggedError2()("TranscriptionFailed", { reason
 
 // apps/web/asr/worker/asrWorker.ts
 __webpack_exports__env.allowRemoteModels = true;
-__webpack_exports__env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
+if (__webpack_exports__env.backends.onnx.wasm) {
+  __webpack_exports__env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
+}
 var transcriber = null;
 var ensureTranscriber = (onProgress) => exports_Effect.tryPromise({
   try: async () => {
