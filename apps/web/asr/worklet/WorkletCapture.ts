@@ -4,7 +4,7 @@ import { WorkletInitFailed } from "../errors";
 export const workletName = "audio-processor";
 
 export const buildWorkletUrl = (baseUrl: string) =>
-  new URL("/audioProcessor.js", baseUrl).toString();
+  new URL("/workers/audioProcessor.js", baseUrl).toString();
 
 export type WorkletChunk = {
   samples: Float32Array;

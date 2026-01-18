@@ -12,7 +12,7 @@
  * @see ensayo_quest-qnj: Phase 4 - Voice Lab
  */
 import { useAtomValue, useAtomSet } from "@effect-atom/atom-react";
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   modelLoadingAtom,
   vadSessionAtom,
@@ -61,9 +61,17 @@ export function VoiceLab() {
   const [transcriptLog, setTranscriptLog] = useState<TranscriptEntry[]>([]);
 
   // Add transcript to log when ASR result changes
-  const handleResultChange = useCallback(() => {
-    if (asrResult && asrResult.transcript) {
-      setTranscriptLog((prev) => [
+  // Uses functional setState to avoid transcriptLog dependency
+  // @see docs/plans/2026-01-18-voice-stack-remediation.md - Phase 2
+  // @see ensayo_quest-0en: Phase 2 - VoiceLab render fix
+  useEffect(() => {
+    if (!asrResult || !asrResult.transcript) return;
+    setTranscriptLog((prev) => {
+      // Skip if already logged (idempotent)
+      if (prev[prev.length - 1]?.id === asrResult.requestId) {
+        return prev;
+      }
+      return [
         ...prev,
         {
           id: asrResult.requestId,
@@ -71,14 +79,9 @@ export function VoiceLab() {
           durationMs: asrResult.durationMs,
           timestamp: Date.now()
         }
-      ]);
-    }
+      ];
+    });
   }, [asrResult]);
-
-  // Effect to log transcripts (simplified - would use useEffect in production)
-  if (asrResult && transcriptLog[transcriptLog.length - 1]?.id !== asrResult.requestId) {
-    handleResultChange();
-  }
 
   return (
     <div className="min-h-screen bg-background p-4">

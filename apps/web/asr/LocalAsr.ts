@@ -48,7 +48,7 @@ export type LocalAsrType = {
 };
 
 export const buildAsrWorkerUrl = (baseUrl: string) =>
-  new URL("/asrWorker.js", baseUrl).toString();
+  new URL("/workers/asrWorker.js", baseUrl).toString();
 
 const spawnBrowserWorker = (id: number) =>
   new Worker(buildAsrWorkerUrl(window.location.href), { type: "module" });

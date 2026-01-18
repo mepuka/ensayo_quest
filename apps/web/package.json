@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "main": "frontend.tsx",
+  "scripts": {
+    "dev": "bun run dev.ts",
+    "build:workers": "bun run scripts/build-workers.ts",
+    "build": "bun run build:workers && vite build"
+  },
   "dependencies": {
     "@ensayo/shared": "workspace:*",
     "@radix-ui/react-progress": "^1.1.8",

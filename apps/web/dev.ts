@@ -95,8 +95,8 @@ console.log(`Serving ${Object.keys(vadRoutes).length} VAD assets`);
 Bun.serve({
   routes: {
     "/": index,
-    "/asrWorker.js": Bun.file(workerOutput.path),
-    "/audioProcessor.js": Bun.file(workletOutput.path),
+    "/workers/asrWorker.js": Bun.file(workerOutput.path),
+    "/workers/audioProcessor.js": Bun.file(workletOutput.path),
     ...vadRoutes
   },
   development: {

@@ -65,7 +65,8 @@ export interface VadServiceOptions {
    */
   readonly model?: "v5" | "legacy";
 
-  // Frame processor options from vad-web
+  // Frame processor options from vad-web (all times in milliseconds)
+  // @see ensayo_quest-mlu: Phase 1.2 - Fixed units to match vad-web API
   /**
    * Speech probability threshold (0-1). Higher = stricter detection.
    * @default 0.5
@@ -83,19 +84,19 @@ export interface VadServiceOptions {
    * Allows for pauses and hesitation.
    * @default 500
    */
-  readonly redemptionFrames?: number;
+  readonly redemptionMs?: number;
 
   /**
    * Padding in ms to add before detected speech start.
    * @default 500
    */
-  readonly preSpeechPadFrames?: number;
+  readonly preSpeechPadMs?: number;
 
   /**
    * Minimum speech duration in ms to trigger a valid segment.
    * @default 250
    */
-  readonly minSpeechFrames?: number;
+  readonly minSpeechMs?: number;
 
   /**
    * Submit speech on pause (vs only on explicit stop).
@@ -182,12 +183,13 @@ const makeVadService = Effect.gen(function* () {
               onnxWASMBasePath: config.onnxWASMBasePath ?? "/vad/onnx",
               model: config.model ?? "legacy",
 
-              // Frame processor options for language learner tuning
+              // Frame processor options for language learner tuning (all in ms)
+              // @see ensayo_quest-mlu: Phase 1.2 - Fixed to pass ms directly
               positiveSpeechThreshold: config.positiveSpeechThreshold ?? 0.5,
               negativeSpeechThreshold: config.negativeSpeechThreshold ?? 0.35,
-              redemptionFrames: config.redemptionFrames ?? 8,
-              preSpeechPadFrames: config.preSpeechPadFrames ?? 1,
-              minSpeechFrames: config.minSpeechFrames ?? 3,
+              redemptionMs: config.redemptionMs ?? 500,
+              preSpeechPadMs: config.preSpeechPadMs ?? 500,
+              minSpeechMs: config.minSpeechMs ?? 250,
               submitUserSpeechOnPause: config.submitUserSpeechOnPause ?? true,
 
               // Event callbacks - emit to Stream

@@ -16,7 +16,10 @@ class AudioProcessor extends AudioWorkletProcessor {
     }
     const channel = input[0];
     if (channel) {
-      this.port.postMessage(channel);
+      // Copy buffer before posting - AudioWorklet reuses the same buffer
+      // @see docs/plans/2026-01-18-voice-stack-remediation.md - Phase 3
+      // @see ensayo_quest-xzr: Phase 3 - Worklet buffer copy
+      this.port.postMessage(channel.slice());
     }
     return true;
   }

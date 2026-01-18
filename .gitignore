@@ -6,6 +6,9 @@ out
 dist
 *.tgz
 
+# Built worker files (production build artifacts)
+apps/web/public/workers/*.js
+
 # code coverage
 coverage
 *.lcov

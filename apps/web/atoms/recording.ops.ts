@@ -1,14 +1,14 @@
 /**
  * Recording Operations - Atom.runtime.fn for model loading and VAD recording
  *
- * Uses Atom.runtime with LocalAsr layer for proper Effect integration.
- * VAD-based recording uses VadService for mic capture and ASR worker for transcription.
+ * Uses a SINGLE Atom.runtime with merged layers for proper resource sharing.
+ * Layer.scoped in LocalAsrLive ensures the worker is created once per runtime scope.
  *
+ * @see docs/plans/2026-01-18-voice-stack-remediation.md - Phase 1.1 (runtime merge)
  * @see docs/plans/2026-01-17-frontend-state-components-design.md - Operation atoms section
- * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
  */
 import { Atom } from "@effect-atom/atom-react";
-import { Effect, Layer, Stream, Fiber, Ref } from "effect";
+import { Effect, Layer, Stream, Fiber } from "effect";
 import {
   modelLoadingAtom,
   speechProbabilityAtom,
@@ -24,25 +24,45 @@ import { vadSessionAtom, vadConfig, VadServiceConfigured } from "./recording.vad
 import { LocalAsr, LocalAsrLive, browserWorkerLayer } from "../asr/LocalAsr";
 import { WorkletCaptureLive } from "../asr/worklet/WorkletCapture";
 import { VadService, type VadEvent as VadServiceEvent } from "../asr/VadService";
-import { createWorkerClient, type AsrWorker, encodeTranscribeRequest, type WorkerRequest, type TranscribeResponse, type PreloadResponse } from "../asr/worker/WorkerClient";
-import { Worker as PlatformWorker } from "@effect/platform";
-import { BrowserWorker } from "@effect/platform-browser";
 
 // =============================================================================
-// Recording Runtime (provides LocalAsr layer)
+// Recording Runtime (SINGLE runtime for all operations)
 // =============================================================================
 
 /**
- * Combined layer for recording operations.
- * Provides LocalAsr service backed by WebWorker + AudioWorklet.
+ * Combined layer for ALL recording operations.
+ *
+ * Merges VadService + LocalAsr into a single layer so that:
+ * 1. The ASR worker is created once and shared across preload/start/stop
+ * 2. Layer.scoped in LocalAsrLive ensures worker lifecycle matches runtime scope
+ *
+ * @see docs/plans/2026-01-18-voice-stack-remediation.md - Task 1.1
+ * @see ensayo_quest-fjb: Phase 1.1 - Merge dual runtimes
  */
-const recordingLayer = LocalAsrLive.pipe(
-  Layer.provide(Layer.mergeAll(browserWorkerLayer, WorkletCaptureLive))
+const recordingLayer = Layer.mergeAll(
+  // VAD configuration for language learners
+  VadServiceConfigured({
+    baseAssetPath: "/vad",
+    onnxWASMBasePath: "/vad/onnx",
+    model: "legacy",
+    positiveSpeechThreshold: vadConfig.positiveSpeechThreshold,
+    // Pass ms directly - vad-web expects milliseconds (fixed in Phase 1.2)
+    redemptionMs: vadConfig.redemptionMs,
+    minSpeechMs: vadConfig.minSpeechMs,
+    submitUserSpeechOnPause: true
+  }),
+  // LocalAsr with worker + worklet dependencies
+  LocalAsrLive.pipe(
+    Layer.provide(Layer.mergeAll(browserWorkerLayer, WorkletCaptureLive))
+  )
 );
 
 /**
- * AtomRuntime with LocalAsr layer.
- * Used for all recording operations that need the ASR service.
+ * Single AtomRuntime for all recording operations.
+ *
+ * CRITICAL: All operations (preload, start, stop) must use THIS runtime
+ * to share the same worker instance. Creating multiple runtimes would
+ * create multiple workers, wasting the preload.
  */
 const recordingRuntime = Atom.runtime(recordingLayer);
 
@@ -94,41 +114,6 @@ export const preloadModelFn = recordingRuntime.fn<void>()(
 );
 
 // =============================================================================
-// VAD Recording Runtime (VadService + ASR Worker)
-// =============================================================================
-
-/**
- * VAD configuration layer using vadConfig from recording.vad.ts.
- * Maps the tuning parameters for language learners.
- */
-const vadConfigLayer = VadServiceConfigured({
-  baseAssetPath: "/vad",
-  onnxWASMBasePath: "/vad/onnx",
-  model: "legacy",
-  positiveSpeechThreshold: vadConfig.positiveSpeechThreshold,
-  redemptionFrames: Math.floor(vadConfig.redemptionMs / 96), // ~96ms per frame
-  minSpeechFrames: Math.floor(vadConfig.minSpeechMs / 96),
-  submitUserSpeechOnPause: true
-});
-
-/**
- * Combined layer for VAD recording operations.
- * Provides VadService + LocalAsr (for transcription).
- */
-const vadRecordingLayer = Layer.mergeAll(
-  vadConfigLayer,
-  LocalAsrLive.pipe(
-    Layer.provide(Layer.mergeAll(browserWorkerLayer, WorkletCaptureLive))
-  )
-);
-
-/**
- * AtomRuntime for VAD-based recording.
- * Used for start/stop recording operations.
- */
-const vadRecordingRuntime = Atom.runtime(vadRecordingLayer);
-
-// =============================================================================
 // Recording Fiber Tracking
 // =============================================================================
 
@@ -154,7 +139,7 @@ const recordingFiberAtom = Atom.make<Fiber.RuntimeFiber<void, unknown> | null>(n
  *
  * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
  */
-export const startRecordingFn = vadRecordingRuntime.fn<void>()(
+export const startRecordingFn = recordingRuntime.fn<void>()(
   Effect.fnUntraced(function* () {
     const vad = yield* VadService;
     const localAsr = yield* LocalAsr;
@@ -273,7 +258,7 @@ export const startRecordingFn = vadRecordingRuntime.fn<void>()(
  *
  * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
  */
-export const stopRecordingFn = vadRecordingRuntime.fn<void>()(
+export const stopRecordingFn = recordingRuntime.fn<void>()(
   Effect.fnUntraced(function* () {
     const fiber = yield* Atom.get(recordingFiberAtom);
 
