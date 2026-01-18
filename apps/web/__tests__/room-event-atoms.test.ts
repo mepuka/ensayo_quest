@@ -85,6 +85,7 @@ describe("roomStateStreamFromEvents", () => {
     // After ScoreUpdated
     expect(states[3]!.turn.scoringStatus).toBe("scored");
     expect(states[3]!.turn.evaluation?.overallScore).toBe(0.7);
+    expect(states[3]!.history[0]?.score?.overallScore).toBe(0.7);
 
     // After RoomCompleted
     expect(states[4]!.status).toBe("completed");

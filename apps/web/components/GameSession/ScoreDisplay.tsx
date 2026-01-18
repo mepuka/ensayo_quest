@@ -5,8 +5,9 @@
  *
  * @see docs/plans/2026-01-17-frontend-state-components-design.md - GameSession section
  */
-import { useAtomValue } from "@effect-atom/atom-react";
-import { cumulativeScoreAtom, latestScoreAtom } from "../../atoms";
+import { useAtomValue, Result } from "@effect-atom/atom-react";
+import * as Option from "effect/Option";
+import { cumulativeScoreAtom, latestScoreAtom, roomStateAtom } from "../../atoms";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
@@ -28,6 +29,12 @@ export interface ScoreDisplayProps {
 export function ScoreDisplay({ className }: ScoreDisplayProps) {
   const cumulativeScore = useAtomValue(cumulativeScoreAtom);
   const latestScore = useAtomValue(latestScoreAtom);
+  const roomStateResult = useAtomValue(roomStateAtom);
+  const roomState = Result.isSuccess(roomStateResult)
+    ? Option.getOrUndefined(Result.value(roomStateResult))
+    : null;
+  const scoringStatus = roomState?.turn.scoringStatus ?? "idle";
+  const provisionalScore = roomState?.turn.evaluation?.overallScore ?? null;
 
   return (
     <Card className={cn("bg-secondary/50", className)}>
@@ -42,14 +49,26 @@ export function ScoreDisplay({ className }: ScoreDisplayProps) {
             </p>
             <p className="text-xs text-muted-foreground">Total Points</p>
           </div>
-          {latestScore !== null && (
-            <Badge
-              variant={latestScore.score >= 70 ? "default" : "secondary"}
-              className="text-sm"
-            >
-              +{latestScore.score}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {latestScore !== null && (
+              <Badge
+                variant={latestScore.score >= 70 ? "default" : "secondary"}
+                className="text-sm"
+              >
+                +{latestScore.score}
+              </Badge>
+            )}
+            {scoringStatus === "pending" && (
+              <Badge variant="secondary" className="text-sm">
+                Scoring...
+              </Badge>
+            )}
+            {scoringStatus === "partial" && (
+              <Badge variant="secondary" className="text-sm">
+                {provisionalScore === null ? "Provisional" : `Provisional ${provisionalScore}`}
+              </Badge>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

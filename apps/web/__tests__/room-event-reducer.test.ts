@@ -18,6 +18,14 @@ const baseEvaluation = {
 
 describe("reduceRoomEvent", () => {
   it("updates turn state for ScoreUpdated", () => {
+    const accepted: RoomEvent = {
+      type: "TurnAccepted",
+      turnId: "turn-1",
+      roomId: "room-1",
+      playerId: "user",
+      transcript: "Hello",
+      timestamp: Date.now()
+    };
     const event: RoomEvent = {
       type: "ScoreUpdated",
       turnId: "turn-1",
@@ -25,12 +33,14 @@ describe("reduceRoomEvent", () => {
       scoreAttemptId: "score-attempt-1",
       evaluation: baseEvaluation
     };
-    const next = reduceRoomEvent(initialRoomState, event);
+    const afterAccepted = reduceRoomEvent(initialRoomState, accepted);
+    const next = reduceRoomEvent(afterAccepted, event);
 
     expect(next.turn.turnId).toBe("turn-1");
     expect(next.turn.scoringStatus).toBe("scored");
     expect(next.turn.evaluation?.overallScore).toBe(0.7);
     expect(next.turn.evaluation?.nextPrompt).toBe("Continue the conversation.");
+    expect(next.history[0]?.score?.overallScore).toBe(0.7);
   });
 
   it("updates turn state for TurnAccepted", () => {

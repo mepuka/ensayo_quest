@@ -227,6 +227,11 @@ const handleScoreUpdated: EventHandler<Extract<RoomEvent, { type: "ScoreUpdated"
 
   return {
     ...state,
+    history: state.history.map((entry) =>
+      entry.turnId === event.turnId && entry.role === "user"
+        ? { ...entry, score: event.evaluation }
+        : entry
+    ),
     turn: {
       turnId: event.turnId,
       scoringStatus: "scored",
