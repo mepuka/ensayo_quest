@@ -45,7 +45,19 @@ export const buildRoomStreamUrl = (baseUrl: string, roomId: string) => {
   return `${protocol}//${url.host}/api/rooms/${roomId}/stream`;
 };
 
-export const getRoomStreamUrl = (roomId: string) => buildRoomStreamUrl(window.location.href, roomId);
+/**
+ * Get WebSocket URL for a room.
+ *
+ * Uses VITE_WS_BASE_URL env var when set (required for Pages deployment
+ * because Pages Functions cannot proxy WebSocket connections).
+ * Falls back to window.location.href for local development.
+ */
+export const getRoomStreamUrl = (roomId: string) => {
+  // In production/staging, VITE_WS_BASE_URL points to Workers API directly
+  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL as string | undefined;
+  const baseUrl = wsBaseUrl || window.location.href;
+  return buildRoomStreamUrl(baseUrl, roomId);
+};
 
 /**
  * Decode a journal entry into a RoomEvent.

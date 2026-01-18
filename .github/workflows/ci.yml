@@ -45,7 +45,7 @@ jobs:
         run: bun test
 
   # ─────────────────────────────────────────────────────────────────
-  # Build frontend (validates build works)
+  # Build frontend (validates build works - staging URL for validation)
   # ─────────────────────────────────────────────────────────────────
   build-web:
     name: Build Web
@@ -62,6 +62,9 @@ jobs:
 
       - name: Build frontend
         run: bunx vite build apps/web --outDir dist
+        env:
+          # Staging URL for PR previews and validation builds
+          VITE_WS_BASE_URL: https://ensayo-quest-api-staging.kokokessy.workers.dev
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -188,7 +191,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy Production
-    needs: [test, build-web]
+    needs: [test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: production
@@ -199,14 +202,14 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-dist
-          path: apps/web/dist
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # Build web with production WebSocket URL
+      - name: Build frontend (production)
+        run: bunx vite build apps/web --outDir dist
+        env:
+          VITE_WS_BASE_URL: https://ensayo-quest-api.kokokessy.workers.dev
 
       - name: Install wrangler
         run: bun add -g wrangler
