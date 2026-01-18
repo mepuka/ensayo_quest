@@ -116,6 +116,20 @@ const loadModel = (onProgress?: ProgressCallback) =>
   });
 
 /**
+ * Result of ensureTranscriber indicating load status.
+ */
+type EnsureTranscriberResult = {
+  readonly transcriber: TranscriberFn;
+  /**
+   * Indicates the load status for progress streaming:
+   * - "already_loaded": Model was already in Ready state (no progress events)
+   * - "joined": Joined an in-flight load (no progress events from our callback)
+   * - "loaded": We performed the actual load (progress events were emitted)
+   */
+  readonly loadStatus: "already_loaded" | "joined" | "loaded";
+};
+
+/**
  * Ensure transcriber is loaded, with single-flight semantics.
  *
  * Uses Ref + Deferred pattern:
@@ -124,9 +138,15 @@ const loadModel = (onProgress?: ProgressCallback) =>
  * - If Ready: Returns cached transcriber immediately
  * - If Failed: Returns cached error immediately
  *
+ * Returns the transcriber along with a loadStatus indicating whether this
+ * caller performed the load, joined an in-flight load, or found it ready.
+ * This allows callers to determine whether to emit progress events.
+ *
  * @param onProgress - Optional callback for progress events during initial load
  */
-const ensureTranscriber = (onProgress?: ProgressCallback) =>
+const ensureTranscriber = (
+  onProgress?: ProgressCallback
+): Effect.Effect<EnsureTranscriberResult, TranscriptionFailed> =>
   Effect.gen(function* () {
     // Atomically check state and transition to Loading if Idle
     const action = yield* Ref.modify(transcriberRef, (state): [
@@ -155,12 +175,14 @@ const ensureTranscriber = (onProgress?: ProgressCallback) =>
 
     switch (action._tag) {
       case "AlreadyReady":
-        return action.transcriber;
+        return { transcriber: action.transcriber, loadStatus: "already_loaded" as const };
       case "AlreadyFailed":
         return yield* Effect.fail(action.error);
-      case "Join":
+      case "Join": {
         // Wait for in-flight load to complete
-        return yield* Deferred.await(action.deferred);
+        const transcriber = yield* Deferred.await(action.deferred);
+        return { transcriber, loadStatus: "joined" as const };
+      }
       case "Load": {
         // We won the race - perform the actual load
         const result = yield* loadModel(onProgress).pipe(Effect.either);
@@ -175,7 +197,7 @@ const ensureTranscriber = (onProgress?: ProgressCallback) =>
         // Load succeeded - transition to Ready state and complete the deferred
         yield* Ref.set(transcriberRef, { _tag: "Ready", transcriber: result.right });
         yield* Deferred.succeed(action.deferred, result.right);
-        return result.right;
+        return { transcriber: result.right, loadStatus: "loaded" as const };
       }
     }
   });
@@ -188,54 +210,42 @@ const ensureTranscriber = (onProgress?: ProgressCallback) =>
  * Handle Preload request - streams progress events during model loading.
  *
  * Returns a Stream that emits:
- * - PreloadProgress events during model download
+ * - PreloadProgress events during model download (only if this caller performs the load)
  * - PreloadComplete when loading finishes
+ *
+ * Race condition fix: Uses ensureTranscriber's atomic state check to determine
+ * whether this caller should emit progress events. The loadStatus returned by
+ * ensureTranscriber is determined atomically during the Ref.modify, eliminating
+ * the race window between checking state and starting the load.
  */
-const handlePreload = (request: Preload): Stream.Stream<PreloadEvent, TranscriptionFailed> => {
-  // Check if already loaded before streaming
-  const checkAlreadyLoaded = Ref.get(transcriberRef).pipe(
-    Effect.map((state) => state._tag === "Ready")
-  );
-
-  return Stream.fromEffect(checkAlreadyLoaded).pipe(
-    Stream.flatMap((wasAlreadyLoaded) => {
-      if (wasAlreadyLoaded) {
-        // Already loaded - emit single complete event
-        return Stream.succeed<PreloadEvent>(
-          new PreloadComplete({
-            _tag: "PreloadComplete",
-            status: "already_loaded"
-          })
-        );
-      }
-
-      // Need to load - stream progress events
-      return Stream.async<PreloadEvent, TranscriptionFailed>((emit) => {
-        Effect.runPromise(
-          ensureTranscriber((progress) => {
-            // Emit progress events as they arrive
-            emit.single(progress);
-          }).pipe(
-            Effect.match({
-              onSuccess: () => {
-                emit.single(
-                  new PreloadComplete({
-                    _tag: "PreloadComplete",
-                    status: "loaded"
-                  })
-                );
-                emit.end();
-              },
-              onFailure: (error) => {
-                emit.fail(error);
-              }
-            })
-          )
-        );
-      });
-    })
-  );
-};
+const handlePreload = (_request: Preload): Stream.Stream<PreloadEvent, TranscriptionFailed> =>
+  Stream.async<PreloadEvent, TranscriptionFailed>((emit) => {
+    Effect.runPromise(
+      ensureTranscriber((progress) => {
+        // Progress callback is only invoked if we won the race and are
+        // actually performing the load (action._tag === "Load").
+        // Joiners and already-loaded callers never receive progress callbacks.
+        emit.single(progress);
+      }).pipe(
+        Effect.match({
+          onSuccess: ({ loadStatus }) => {
+            // Map the atomic loadStatus to the appropriate completion status
+            const completionStatus = loadStatus === "loaded" ? "loaded" : "already_loaded";
+            emit.single(
+              new PreloadComplete({
+                _tag: "PreloadComplete",
+                status: completionStatus
+              })
+            );
+            emit.end();
+          },
+          onFailure: (error) => {
+            emit.fail(error);
+          }
+        })
+      )
+    );
+  });
 
 /**
  * Handle Transcribe request - returns transcription result.
@@ -245,7 +255,7 @@ const handlePreload = (request: Preload): Stream.Stream<PreloadEvent, Transcript
  */
 const handleTranscribe = (request: Transcribe) =>
   Effect.gen(function* () {
-    const transcriber = yield* ensureTranscriber();
+    const { transcriber } = yield* ensureTranscriber();
 
     const result = yield* Effect.tryPromise({
       try: () =>
