@@ -129,6 +129,11 @@ type EnsureTranscriberResult = {
   readonly loadStatus: "already_loaded" | "joined" | "loaded";
 };
 
+const makeEnsureResult = (
+  transcriber: TranscriberFn,
+  loadStatus: EnsureTranscriberResult["loadStatus"]
+): EnsureTranscriberResult => ({ transcriber, loadStatus });
+
 /**
  * Ensure transcriber is loaded, with single-flight semantics.
  *
@@ -144,10 +149,9 @@ type EnsureTranscriberResult = {
  *
  * @param onProgress - Optional callback for progress events during initial load
  */
-const ensureTranscriber = (
+const ensureTranscriber = Effect.fn("ensureTranscriber")(function* (
   onProgress?: ProgressCallback
-): Effect.Effect<EnsureTranscriberResult, TranscriptionFailed> =>
-  Effect.gen(function* () {
+) {
     // Atomically check state and transition to Loading if Idle
     const action = yield* Ref.modify(transcriberRef, (state): [
       | { readonly _tag: "AlreadyReady"; readonly transcriber: TranscriberFn }
@@ -175,49 +179,48 @@ const ensureTranscriber = (
 
     switch (action._tag) {
       case "AlreadyReady":
-        return { transcriber: action.transcriber, loadStatus: "already_loaded" as const };
+        return makeEnsureResult(action.transcriber, "already_loaded");
       case "AlreadyFailed":
-        return yield* Effect.fail(action.error);
+        return yield* action.error;
       case "Join": {
         // Wait for in-flight load to complete
         const transcriber = yield* Deferred.await(action.deferred);
-        return { transcriber, loadStatus: "joined" as const };
+        return makeEnsureResult(transcriber, "joined");
       }
       case "Load": {
         // We won the race - perform the actual load
         // Ensure the deferred is completed on all exit paths to avoid deadlocks.
-        const exit = yield* Effect.uninterruptibleMask((restore) =>
-          restore(loadModel(onProgress)).pipe(Effect.exit)
-        );
+        const exit: Exit.Exit<TranscriberFn, TranscriptionFailed> =
+          yield* Effect.uninterruptibleMask((restore) =>
+            restore(loadModel(onProgress)).pipe(Effect.exit)
+          );
 
         yield* Deferred.done(action.deferred, exit);
 
-        return yield* Exit.matchEffect(exit, {
-          onSuccess: (transcriber) =>
-            Ref.set(transcriberRef, { _tag: "Ready", transcriber }).pipe(
-              Effect.as({ transcriber, loadStatus: "loaded" as const })
-            ),
-          onFailure: (cause) => {
-            const interrupted = Cause.isInterruptedOnly(cause);
-            const error = Either.match(Cause.failureOrCause(cause), {
-              onRight: (failure) => failure,
-              onLeft: (other) =>
-                new TranscriptionFailed({
-                  reason: interrupted
-                    ? "Transcriber load interrupted"
-                    : Cause.pretty(other)
-                })
-            });
+        if (Exit.isSuccess(exit)) {
+          const transcriber = exit.value;
+          yield* Ref.set(transcriberRef, { _tag: "Ready", transcriber });
+          return makeEnsureResult(transcriber, "loaded");
+        }
 
-            const nextState: TranscriberState = interrupted
-              ? { _tag: "Idle" }
-              : { _tag: "Failed", error };
-
-            return Ref.set(transcriberRef, nextState).pipe(
-              Effect.zipRight(Effect.fail(error))
-            );
-          }
+        const cause = exit.cause;
+        const interrupted = Cause.isInterruptedOnly(cause);
+        const error: TranscriptionFailed = Either.match(Cause.failureOrCause(cause), {
+          onRight: (failure) => failure,
+          onLeft: (other) =>
+            new TranscriptionFailed({
+              reason: interrupted
+                ? "Transcriber load interrupted"
+                : Cause.pretty(other)
+            })
         });
+
+        const nextState: TranscriberState = interrupted
+          ? { _tag: "Idle" }
+          : { _tag: "Failed", error };
+
+        yield* Ref.set(transcriberRef, nextState);
+        return yield* error;
       }
     }
   });
@@ -260,7 +263,7 @@ const handlePreload = (_request: Preload): Stream.Stream<PreloadEvent, Transcrip
             emit.end();
           },
           onFailure: (error) => {
-            emit.fail(error);
+            emit.failCause(Cause.fail(error));
           }
         })
       )
@@ -273,8 +276,7 @@ const handlePreload = (_request: Preload): Stream.Stream<PreloadEvent, Transcrip
  * Ensures model is loaded (joining in-flight load if needed),
  * then transcribes the audio data.
  */
-const handleTranscribe = (request: Transcribe) =>
-  Effect.gen(function* () {
+const handleTranscribe = Effect.fn("handleTranscribe")(function* (request: Transcribe) {
     const { transcriber } = yield* ensureTranscriber();
 
     const result = yield* Effect.tryPromise({
@@ -308,10 +310,7 @@ const handleTranscribe = (request: Transcribe) =>
 const runnerLayer = WorkerRunner.layerSerialized(ASRWorkerRequest, {
   Preload: handlePreload,
   Transcribe: handleTranscribe
-}).pipe(
-  // Provide the browser platform runner
-  // Layer.provide is not needed here - provide in launch
-);
+});
 
 // -----------------------------------------------------------------------------
 // Launch Worker

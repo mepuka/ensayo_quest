@@ -13,8 +13,10 @@ import {
   clearAllRoomConnections
 } from "../eventlog/EventLogClient";
 
+type ScoreUpdatedPayload = Parameters<typeof payloadEncoders.ScoreUpdated>[0];
+
 // Server payload format (matches what the server writes to journal)
-const scorePayload = {
+const scorePayload: ScoreUpdatedPayload = {
   roomId: "room-1",
   turnId: "turn-1",
   status: "final",

@@ -17,6 +17,7 @@ import {
   PreloadProgress,
   type PreloadEvent
 } from "../worker/protocol";
+import { TranscriptionFailed } from "../errors";
 
 /**
  * Create a mock WorkerManager that spawns serialized workers with custom handlers.
@@ -31,9 +32,9 @@ const createMockWorkerLayer = (handlers: {
   // Track worker instance to ensure single-flight behavior
   let workerInstanceCount = 0;
 
-  const mockWorkerManager = {
+  const mockWorkerManager: Worker.WorkerManager = {
     [Worker.WorkerManagerTypeId]: Worker.WorkerManagerTypeId,
-    spawn: <I, O, E>() => {
+    spawn: <I, O, E>(_options: Worker.Options<I>) => {
       workerInstanceCount++;
       return Effect.succeed({
         id: workerInstanceCount,
@@ -70,7 +71,7 @@ const createMockWorkerLayer = (handlers: {
             const lastEvent = events[events.length - 1];
             return Effect.succeed(lastEvent);
           }
-          return Effect.fail(new Error("Unknown request type"));
+          return Effect.fail(new TranscriptionFailed({ reason: "unknown_request" }));
         }
       } as unknown as Worker.Worker<I, O, E>);
     }
@@ -139,7 +140,8 @@ describe("LocalAsr", () => {
     const result = await Effect.runPromise(program);
 
     expect(result.transcript).toBe("Hola mundo");
-    expect(capturedAudio).toEqual(testAudio);
+    expect(capturedAudio).not.toBeNull();
+    expect(capturedAudio!).toEqual(testAudio);
     expect(capturedSampleRate).toBe(16000);
   });
 
@@ -223,9 +225,9 @@ describe("LocalAsr", () => {
 
     expect(result.status).toBe("loaded");
     expect(progressEvents.length).toBe(4);
-    expect(progressEvents[0]._tag).toBe("PreloadProgress");
-    expect((progressEvents[0] as PreloadProgress).status).toBe("initiate");
-    expect(progressEvents[3]._tag).toBe("PreloadComplete");
+    expect(progressEvents[0]!._tag).toBe("PreloadProgress");
+    expect((progressEvents[0]! as PreloadProgress).status).toBe("initiate");
+    expect(progressEvents[3]!._tag).toBe("PreloadComplete");
   });
 });
 
@@ -365,9 +367,9 @@ describe("LocalAsr concurrent preload", () => {
 
       // Each preload call gets its own progress callback
       yield* Effect.all([
-        localAsr.preload((event) => progressCallbacks[0].push(event)),
-        localAsr.preload((event) => progressCallbacks[1].push(event)),
-        localAsr.preload((event) => progressCallbacks[2].push(event))
+        localAsr.preload((event) => progressCallbacks[0]!.push(event)),
+        localAsr.preload((event) => progressCallbacks[1]!.push(event)),
+        localAsr.preload((event) => progressCallbacks[2]!.push(event))
       ], { concurrency: "unbounded" });
 
       return progressCallbacks;
@@ -378,8 +380,8 @@ describe("LocalAsr concurrent preload", () => {
     // Each callback received events
     result.forEach((events, i) => {
       expect(events.length).toBe(3);
-      expect(events[0]._tag).toBe("PreloadProgress");
-      expect(events[2]._tag).toBe("PreloadComplete");
+      expect(events[0]!._tag).toBe("PreloadProgress");
+      expect(events[2]!._tag).toBe("PreloadComplete");
     });
   });
 

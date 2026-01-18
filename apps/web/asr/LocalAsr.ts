@@ -67,7 +67,7 @@ export const makeLocalAsr = Effect.gen(function* () {
   const sampleRateRef = yield* Ref.make(16000);
   const streamRef = yield* Ref.make<Fiber.RuntimeFiber<void, never> | null>(null);
 
-  const start = Effect.fn(function* () {
+  const start: LocalAsrService["start"] = Effect.fn("LocalAsr.start")(function* () {
     yield* capture.start();
     const existingStream = yield* Ref.get(streamRef);
     if (!existingStream) {
@@ -84,7 +84,7 @@ export const makeLocalAsr = Effect.gen(function* () {
     }
   }, Effect.mapError((cause) => new Error(String(cause))));
 
-  const stop = Effect.fn(function* () {
+  const stop: LocalAsrService["stop"] = Effect.fn("LocalAsr.stop")(function* () {
     const streamFiber = yield* Ref.get(streamRef);
     if (streamFiber) {
       yield* Fiber.interrupt(streamFiber).pipe(Effect.asVoid);
@@ -125,33 +125,34 @@ export const makeLocalAsr = Effect.gen(function* () {
    * @param onProgress - Optional callback for progress events during model loading
    * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
    */
-  const preload = (onProgress?: (event: PreloadEvent) => void) =>
-    Effect.gen(function* () {
-      // Use execute() for streaming response (Preload returns Stream<PreloadEvent>)
-      const progressStream = worker.execute(
-        new Preload({
-          requestId: crypto.randomUUID(),
-          config: undefined
-        })
-      );
+  const preload: LocalAsrService["preload"] = Effect.fn("LocalAsr.preload")(function* (
+    onProgress?: (event: PreloadEvent) => void
+  ) {
+    // Use execute() for streaming response (Preload returns Stream<PreloadEvent>)
+    const progressStream = worker.execute(
+      new Preload({
+        requestId: crypto.randomUUID(),
+        config: undefined
+      })
+    );
 
-      // Track final status from the PreloadComplete event
-      let finalStatus: "loaded" | "already_loaded" = "loaded";
+    // Track final status from the PreloadComplete event
+    let finalStatus: "loaded" | "already_loaded" = "loaded";
 
-      // Consume the stream, calling onProgress for each event
-      yield* Stream.runForEach(progressStream, (event) =>
-        Effect.sync(() => {
-          // Call the progress callback if provided
-          onProgress?.(event);
-          // Capture the final status from PreloadComplete event
-          if (event._tag === "PreloadComplete") {
-            finalStatus = event.status;
-          }
-        })
-      );
+    // Consume the stream, calling onProgress for each event
+    yield* Stream.runForEach(progressStream, (event) =>
+      Effect.sync(() => {
+        // Call the progress callback if provided
+        onProgress?.(event);
+        // Capture the final status from PreloadComplete event
+        if (event._tag === "PreloadComplete") {
+          finalStatus = event.status;
+        }
+      })
+    );
 
-      return { status: finalStatus };
-    }).pipe(Effect.mapError((cause) => new Error(String(cause))));
+    return { status: finalStatus };
+  }, Effect.mapError((cause) => new Error(String(cause))));
 
   /**
    * Transcribe audio directly (for VAD-captured audio).
@@ -160,20 +161,22 @@ export const makeLocalAsr = Effect.gen(function* () {
    *
    * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
    */
-  const transcribe = (audio: Float32Array, sampleRate: number) =>
-    Effect.gen(function* () {
-      // Copy audio before transfer; transferables detach the original buffer.
-      const transferAudio = audio.slice();
-      const response = yield* worker.executeEffect(
-        new Transcribe({
-          requestId: crypto.randomUUID(),
-          audio: transferAudio,
-          sampleRate,
-          config: undefined
-        })
-      );
-      return { transcript: response.transcript };
-    }).pipe(Effect.mapError((cause) => new Error(String(cause))));
+  const transcribe: LocalAsrService["transcribe"] = Effect.fn("LocalAsr.transcribe")(function* (
+    audio: Float32Array,
+    sampleRate: number
+  ) {
+    // Copy audio before transfer; transferables detach the original buffer.
+    const transferAudio = audio.slice();
+    const response = yield* worker.executeEffect(
+      new Transcribe({
+        requestId: crypto.randomUUID(),
+        audio: transferAudio,
+        sampleRate,
+        config: undefined
+      })
+    );
+    return { transcript: response.transcript };
+  }, Effect.mapError((cause) => new Error(String(cause))));
 
   return { start, stop, preload, transcribe };
 });

@@ -238,6 +238,7 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
             // Use LocalAsr's transcribe method for direct transcription
             // Preserve typed errors and surface to UI instead of coercing to Error
             const result = yield* localAsr.transcribe(event.audio, sampleRate).pipe(
+              Effect.map((success): { transcript: string; error?: string } => success),
               Effect.catchAll(
                 Effect.fnUntraced(function* (error) {
                   yield* Effect.logError("Transcription failed", {

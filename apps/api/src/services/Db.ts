@@ -380,7 +380,7 @@ export const DbLive = Layer.effect(
         region: string;
         register: string;
       }) =>
-        Effect.gen(function* () {
+        Effect.fn("Db.insertScenarioTemplate")(function* () {
           const encoded = encodeScenarioTemplate(input.template);
           const templateJson = stableJsonStringify(encoded);
           const templateVersion = yield* hashSha256(templateJson).pipe(
