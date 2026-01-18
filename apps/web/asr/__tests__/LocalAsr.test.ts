@@ -290,3 +290,166 @@ describe("LocalAsr edge cases", () => {
     expect(result.status).toBe("loaded");
   });
 });
+
+/**
+ * Concurrent Preload Tests
+ *
+ * Tests that verify concurrent preload calls are handled correctly.
+ * The single-flight behavior is implemented in the worker (asrWorker.ts ensureTranscriber),
+ * but these tests verify the LocalAsr API accepts concurrent calls gracefully.
+ *
+ * @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 4
+ */
+describe("LocalAsr concurrent preload", () => {
+  it("concurrent preload calls all complete successfully", async () => {
+    let preloadCallCount = 0;
+
+    const { workerLayer, spawnerLayer } = createMockWorkerLayer({
+      onPreload: () => {
+        preloadCallCount++;
+        return [new PreloadComplete({ _tag: "PreloadComplete", status: "loaded" })];
+      }
+    });
+    const captureLayer = createMockCaptureLayer();
+    const layer = Layer.mergeAll(workerLayer, spawnerLayer, captureLayer);
+
+    // Create the LocalAsr service and call preload concurrently
+    const program = Effect.gen(function* () {
+      const localAsr = yield* makeLocalAsr;
+
+      // Fire off multiple concurrent preload calls
+      const results = yield* Effect.all([
+        localAsr.preload(),
+        localAsr.preload(),
+        localAsr.preload()
+      ], { concurrency: "unbounded" });
+
+      return results;
+    }).pipe(Effect.provide(layer), Effect.scoped);
+
+    const results = await Effect.runPromise(program);
+
+    // All three calls should complete successfully
+    expect(results.length).toBe(3);
+    results.forEach((result) => {
+      expect(result.status).toBe("loaded");
+    });
+
+    // With mock, each call goes through (single-flight is in real worker)
+    expect(preloadCallCount).toBe(3);
+  });
+
+  it("concurrent preload calls receive their own progress callbacks", async () => {
+    const progressCallbacks: PreloadEvent[][] = [[], [], []];
+
+    const { workerLayer, spawnerLayer } = createMockWorkerLayer({
+      onPreload: () => [
+        new PreloadProgress({
+          _tag: "PreloadProgress",
+          status: "initiate",
+          file: "model.bin"
+        }),
+        new PreloadProgress({
+          _tag: "PreloadProgress",
+          status: "progress",
+          progress: 0.5
+        }),
+        new PreloadComplete({ _tag: "PreloadComplete", status: "loaded" })
+      ]
+    });
+    const captureLayer = createMockCaptureLayer();
+    const layer = Layer.mergeAll(workerLayer, spawnerLayer, captureLayer);
+
+    const program = Effect.gen(function* () {
+      const localAsr = yield* makeLocalAsr;
+
+      // Each preload call gets its own progress callback
+      yield* Effect.all([
+        localAsr.preload((event) => progressCallbacks[0].push(event)),
+        localAsr.preload((event) => progressCallbacks[1].push(event)),
+        localAsr.preload((event) => progressCallbacks[2].push(event))
+      ], { concurrency: "unbounded" });
+
+      return progressCallbacks;
+    }).pipe(Effect.provide(layer), Effect.scoped);
+
+    const result = await Effect.runPromise(program);
+
+    // Each callback received events
+    result.forEach((events, i) => {
+      expect(events.length).toBe(3);
+      expect(events[0]._tag).toBe("PreloadProgress");
+      expect(events[2]._tag).toBe("PreloadComplete");
+    });
+  });
+
+  it("concurrent transcribe and preload calls do not interfere", async () => {
+    let preloadCalled = false;
+    let transcribeCalled = false;
+
+    const { workerLayer, spawnerLayer } = createMockWorkerLayer({
+      onPreload: () => {
+        preloadCalled = true;
+        return [new PreloadComplete({ _tag: "PreloadComplete", status: "loaded" })];
+      },
+      onTranscribe: (audio, sampleRate) => {
+        transcribeCalled = true;
+        return "Hola mundo";
+      }
+    });
+    const captureLayer = createMockCaptureLayer();
+    const layer = Layer.mergeAll(workerLayer, spawnerLayer, captureLayer);
+
+    const program = Effect.gen(function* () {
+      const localAsr = yield* makeLocalAsr;
+
+      // Fire preload and transcribe concurrently
+      const [preloadResult, transcribeResult] = yield* Effect.all([
+        localAsr.preload(),
+        localAsr.transcribe(new Float32Array([0.1, 0.2]), 16000)
+      ], { concurrency: "unbounded" });
+
+      return { preloadResult, transcribeResult };
+    }).pipe(Effect.provide(layer), Effect.scoped);
+
+    const { preloadResult, transcribeResult } = await Effect.runPromise(program);
+
+    expect(preloadCalled).toBe(true);
+    expect(transcribeCalled).toBe(true);
+    expect(preloadResult.status).toBe("loaded");
+    expect(transcribeResult.transcript).toBe("Hola mundo");
+  });
+
+  it("sequential preload calls work correctly", async () => {
+    let callOrder: string[] = [];
+
+    const { workerLayer, spawnerLayer } = createMockWorkerLayer({
+      onPreload: () => {
+        callOrder.push("preload");
+        // First call loads, subsequent calls find it already loaded
+        const status = callOrder.filter((c) => c === "preload").length === 1
+          ? "loaded"
+          : "already_loaded";
+        return [new PreloadComplete({ _tag: "PreloadComplete", status })];
+      }
+    });
+    const captureLayer = createMockCaptureLayer();
+    const layer = Layer.mergeAll(workerLayer, spawnerLayer, captureLayer);
+
+    const program = Effect.gen(function* () {
+      const localAsr = yield* makeLocalAsr;
+
+      // Sequential calls - second should see already_loaded
+      const first = yield* localAsr.preload();
+      const second = yield* localAsr.preload();
+
+      return { first, second };
+    }).pipe(Effect.provide(layer), Effect.scoped);
+
+    const { first, second } = await Effect.runPromise(program);
+
+    expect(first.status).toBe("loaded");
+    expect(second.status).toBe("already_loaded");
+    expect(callOrder.length).toBe(2);
+  });
+});
