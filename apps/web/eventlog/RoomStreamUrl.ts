@@ -1,5 +1,10 @@
-import { Effect } from "effect";
+import { Effect, Data } from "effect";
 import { decodeRoomWsResponse } from "@ensayo/shared";
+
+class RoomWsUrlResolveError extends Data.TaggedError("RoomWsUrlResolveError")<{
+  readonly reason: string;
+  readonly cause?: unknown;
+}> {}
 
 const roomWsUrlCache = new Map<string, string>();
 const storagePrefix = "ensayo:room-ws-url:";
@@ -67,26 +72,25 @@ const fetchRoomStreamUrl = (roomId: string) =>
       const decoded = decodeRoomWsResponse(json);
       return decoded.wsUrl;
     },
-    catch: (cause) => new Error(`Failed to resolve wsUrl: ${String(cause)}`)
+    catch: (cause) => new RoomWsUrlResolveError({ reason: `Failed to resolve wsUrl: ${String(cause)}`, cause })
   });
 
 /**
  * Resolve a room WebSocket URL.
  * Order: memory/session cache → API resolve → env/location fallback.
  */
-export const resolveRoomStreamUrl = (roomId: string) =>
-  Effect.gen(function* () {
-    const cached = getCachedRoomStreamUrl(roomId);
-    if (cached) return cached;
+export const resolveRoomStreamUrl = Effect.fn("resolveRoomStreamUrl")(function* (roomId: string) {
+  const cached = getCachedRoomStreamUrl(roomId);
+  if (cached) return cached;
 
-    return yield* fetchRoomStreamUrl(roomId).pipe(
-      Effect.tap((wsUrl) => Effect.sync(() => cacheRoomStreamUrl(roomId, wsUrl))),
-      Effect.orElse(() =>
-        Effect.sync(() => {
-          const fallback = buildRoomStreamUrl(getFallbackBaseUrl(), roomId);
-          cacheRoomStreamUrl(roomId, fallback);
-          return fallback;
-        })
-      )
-    );
-  });
+  return yield* fetchRoomStreamUrl(roomId).pipe(
+    Effect.tap((wsUrl) => Effect.sync(() => cacheRoomStreamUrl(roomId, wsUrl))),
+    Effect.orElse(() =>
+      Effect.sync(() => {
+        const fallback = buildRoomStreamUrl(getFallbackBaseUrl(), roomId);
+        cacheRoomStreamUrl(roomId, fallback);
+        return fallback;
+      })
+    )
+  );
+});
