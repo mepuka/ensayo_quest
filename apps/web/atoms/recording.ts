@@ -73,6 +73,9 @@ export const speechProbabilityAtom = Atom.make<number>(0);
 
 /**
  * ASR result with requestId for idempotent submission.
+ * Includes optional error field to surface transcription failures to UI.
+ *
+ * @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
  */
 export type AsrResult = {
   transcript: string;
@@ -80,6 +83,8 @@ export type AsrResult = {
   durationMs: number;
   sampleRate: number;
   audio: Float32Array;
+  /** Error reason if transcription failed */
+  error?: string;
 };
 
 export const asrResultAtom = Atom.make<AsrResult | null>(null);

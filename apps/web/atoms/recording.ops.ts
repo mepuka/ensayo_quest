@@ -8,7 +8,7 @@
  * @see docs/plans/2026-01-17-frontend-state-components-design.md - Operation atoms section
  */
 import { Atom } from "@effect-atom/atom-react";
-import { Effect, Layer, Stream, Fiber } from "effect";
+import { Effect, Layer, Stream, Fiber, Ref } from "effect";
 import {
   modelLoadingAtom,
   speechProbabilityAtom,
@@ -123,6 +123,14 @@ export const preloadModelFn = recordingRuntime.fn<void>()(
  */
 const recordingFiberAtom = Atom.make<Fiber.RuntimeFiber<void, unknown> | null>(null);
 
+/**
+ * Ref to track the latest ASR request ID.
+ * Used to drop stale results when a newer transcription request is in flight.
+ *
+ * @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+ */
+const latestRequestIdRef = Ref.unsafeMake<string | null>(null);
+
 // =============================================================================
 // VAD Recording Operations
 // =============================================================================
@@ -189,34 +197,79 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
             // Transcribe the audio using ASR worker
             // VAD outputs audio at 16kHz
             const sampleRate = 16000;
+
+            // Guard: Skip transcription for empty audio or invalid sample rate
+            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+            if (event.audio.length === 0 || sampleRate <= 0) {
+              yield* Effect.logWarning("Skipping transcription - empty audio or invalid sample rate", {
+                audioLength: event.audio.length,
+                sampleRate
+              });
+              yield* Atom.set(asrResultAtom, {
+                transcript: "",
+                requestId: crypto.randomUUID(),
+                durationMs: 0,
+                sampleRate,
+                audio: event.audio
+              });
+              break;
+            }
+
+            // Generate requestId BEFORE transcription to track this request
+            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+            const requestId = crypto.randomUUID();
+            yield* Ref.set(latestRequestIdRef, requestId);
+
             yield* Effect.logInfo("Transcribing audio", {
               samples: event.audio.length,
-              durationMs
+              durationMs,
+              requestId
             });
 
             // Use LocalAsr's transcribe method for direct transcription
+            // Preserve typed errors and surface to UI instead of coercing to Error
             const result = yield* localAsr.transcribe(event.audio, sampleRate).pipe(
               Effect.catchAll(
                 Effect.fnUntraced(function* (error) {
-                  yield* Effect.logError("Transcription failed", { error: String(error) });
-                  return { transcript: "" };
+                  yield* Effect.logError("Transcription failed", {
+                    error: String(error),
+                    requestId
+                  });
+                  // Surface error to UI while still returning a result shape
+                  // The error field will be populated to indicate failure
+                  return { transcript: "", error: String(error) };
                 })
               )
             );
+
+            // Check if this result is stale (a newer request was started)
+            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+            const latestId = yield* Ref.get(latestRequestIdRef);
+            if (latestId !== requestId) {
+              yield* Effect.logInfo("Dropping stale ASR result", {
+                requestId,
+                latestId
+              });
+              break;
+            }
+
             const transcript = result.transcript;
 
-            // Set ASR result
+            // Set ASR result with error field if transcription failed
             yield* Atom.set(asrResultAtom, {
               transcript,
-              requestId: crypto.randomUUID(),
+              requestId,
               durationMs,
               sampleRate,
-              audio: event.audio
+              audio: event.audio,
+              ...(result.error ? { error: result.error } : {})
             });
 
             yield* Effect.logInfo("Speech ended, transcription complete", {
               durationMs,
-              transcript: transcript.slice(0, 50)
+              transcript: transcript.slice(0, 50),
+              requestId,
+              hasError: !!result.error
             });
             break;
           }
