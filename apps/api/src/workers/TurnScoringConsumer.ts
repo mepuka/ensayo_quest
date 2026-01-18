@@ -85,7 +85,9 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
         })
       );
       const scoreAttemptId = options?.scoreAttemptId ?? audioUpload.requestId ?? crypto.randomUUID();
+      const scoringStartedAt = Date.now();
       const targetVocab = templateRecord.template.roleRubrics[0]?.targetVocab ?? [];
+      const partialStartedAt = Date.now();
       const partialEvaluation = yield* scoring.evaluatePartial({
         turnId: submission.turnId,
         transcript: submission.transcript,
@@ -94,6 +96,7 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
       }).pipe(
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
+      const partialEvalMs = Date.now() - partialStartedAt;
       yield* roomDo.emitRoomEvent(
         job.roomId,
         new ScoreUpdated({
@@ -106,7 +109,9 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
       ).pipe(
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
+      const partialEmittedAt = Date.now();
       // Scoring service errors are typically retryable (external API issues)
+      const finalStartedAt = Date.now();
       const evaluation = yield* scoring.evaluate({
         turnId: submission.turnId,
         transcript: submission.transcript,
@@ -115,6 +120,7 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
       }).pipe(
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
+      const finalEvalMs = Date.now() - finalStartedAt;
       // Schema encoding errors are non-retryable - bad data structure
       const detailJson = yield* Effect.try({
         try: () => Schema.encodeSync(Schema.parseJson(TurnEvaluation))(evaluation),
@@ -145,6 +151,18 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
       ).pipe(
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
+      const finalEmittedAt = Date.now();
+      yield* Effect.logInfo("Scoring latency", {
+        roomId: job.roomId,
+        turnId: job.turnId,
+        scoreAttemptId,
+        queueStatus: job.status,
+        partialEvalMs,
+        partialLatencyMs: partialEmittedAt - scoringStartedAt,
+        finalEvalMs,
+        partialToFinalMs: finalEmittedAt - partialEmittedAt,
+        totalMs: finalEmittedAt - scoringStartedAt
+      });
     });
 
   return { handle };

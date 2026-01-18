@@ -93,12 +93,28 @@ export const DbLive = Layer.effect(
     );
     const encodeScenarioTemplate = Schema.encodeSync(ScenarioTemplate);
     const deriveTemplateVersion = (template: ScenarioTemplate, storedVersion: string) => {
-      if (storedVersion.trim().length > 0) {
-        return Effect.succeed(storedVersion);
-      }
       const canonicalJson = stableJsonStringify(encodeScenarioTemplate(template));
+      const normalizedStored = storedVersion.trim();
       return hashSha256(canonicalJson).pipe(
-        Effect.mapError((cause) => new DbError({ reason: String(cause) }))
+        Effect.mapError((cause) => new DbError({ reason: String(cause) })),
+        Effect.tap((computed) => {
+          if (normalizedStored.length === 0) {
+            return Effect.logWarning("template_version_missing", {
+              templateId: template.templateId
+            });
+          }
+          if (normalizedStored !== computed) {
+            return Effect.logWarning("template_version_mismatch", {
+              templateId: template.templateId,
+              storedVersion: normalizedStored,
+              computedVersion: computed
+            });
+          }
+          return Effect.void;
+        }),
+        Effect.map((computed) =>
+          normalizedStored.length > 0 ? normalizedStored : computed
+        )
       );
     };
     return {
