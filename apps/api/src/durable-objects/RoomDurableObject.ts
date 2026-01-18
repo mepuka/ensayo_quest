@@ -159,6 +159,8 @@ const convertEventToEncoderPayload = (
         payload: {
           roomId,
           turnId: event.turnId,
+          status: event.status,
+          scoreAttemptId: event.scoreAttemptId,
           scores: event.evaluation.scores,
           overallScore: event.evaluation.overallScore,
           feedback: event.evaluation.feedback,
@@ -226,6 +228,7 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
           seedPrompt: event.seedPrompt,
           topic: event.topic,
           level: event.level,
+          templateVersion: event.templateVersion,
           timestamp
         })
       });
@@ -286,6 +289,8 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
         payload: new ScoreUpdatedPayload({
           roomId,
           turnId: event.turnId,
+          status: event.status,
+          scoreAttemptId: event.scoreAttemptId,
           scores: {
             fluency: event.evaluation.scores.fluency,
             vocab: event.evaluation.scores.vocab,

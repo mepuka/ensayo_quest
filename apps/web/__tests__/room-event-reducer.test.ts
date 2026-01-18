@@ -21,6 +21,8 @@ describe("reduceRoomEvent", () => {
     const event: RoomEvent = {
       type: "ScoreUpdated",
       turnId: "turn-1",
+      status: "final",
+      scoreAttemptId: "score-attempt-1",
       evaluation: baseEvaluation
     };
     const next = reduceRoomEvent(initialRoomState, event);

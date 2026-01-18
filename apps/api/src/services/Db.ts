@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import type { TurnSubmission } from "../domain/TurnSubmission";
 import { TurnSubmission as TurnSubmissionSchema } from "../domain/TurnSubmission";
 import { ScenarioTemplate } from "../domain/ScenarioTemplate";
+import { hashSha256, stableJsonStringify } from "../domain/TemplateVersion";
 import { queries } from "../db/queries";
 import { Env } from "./Env";
 
@@ -10,14 +11,19 @@ export class DbError extends Schema.TaggedError<DbError>()("DbError", {
   reason: Schema.String
 }) {}
 
+export type ScenarioTemplateRecord = {
+  template: ScenarioTemplate;
+  templateVersion: string;
+};
+
 export interface DbService {
   createRoom: (roomId: string, templateId: string) => Effect.Effect<void, DbError, never>;
   insertTurn: (submission: TurnSubmission) => Effect.Effect<void, DbError, never>;
   getRoomTemplateId: (roomId: string) => Effect.Effect<string, DbError, never>;
   getNextTurnIndex: (roomId: string) => Effect.Effect<number, DbError, never>;
-  findScenarioTemplate: (input: { topic: string; level: string }) => Effect.Effect<ScenarioTemplate, DbError, never>;
+  findScenarioTemplate: (input: { topic: string; level: string }) => Effect.Effect<ScenarioTemplateRecord, DbError, never>;
   getTurnSubmission: (turnId: string) => Effect.Effect<TurnSubmission, DbError, never>;
-  getScenarioTemplate: (templateId: string) => Effect.Effect<ScenarioTemplate, DbError, never>;
+  getScenarioTemplate: (templateId: string) => Effect.Effect<ScenarioTemplateRecord, DbError, never>;
   updateTurnAudioKey: (input: { turnId: string; audioKey: string }) => Effect.Effect<void, DbError, never>;
   updateTurnScore: (input: {
     turnId: string;
@@ -85,6 +91,16 @@ export const DbLive = Layer.effect(
     const decodeScenarioTemplate = Schema.decodeUnknownSync(
       Schema.parseJson(ScenarioTemplate)
     );
+    const encodeScenarioTemplate = Schema.encodeSync(ScenarioTemplate);
+    const deriveTemplateVersion = (template: ScenarioTemplate, storedVersion: string) => {
+      if (storedVersion.trim().length > 0) {
+        return Effect.succeed(storedVersion);
+      }
+      const canonicalJson = stableJsonStringify(encodeScenarioTemplate(template));
+      return hashSha256(canonicalJson).pipe(
+        Effect.mapError((cause) => new DbError({ reason: String(cause) }))
+      );
+    };
     return {
       createRoom: (roomId: string, templateId: string) =>
         run(queries.insertRoom, [roomId, templateId, Date.now()]),
@@ -151,10 +167,21 @@ export const DbLive = Layer.effect(
             Effect.try({
               try: () => {
                 const record = row as Record<string, unknown>;
-                return decodeScenarioTemplate(String(record.template_json ?? ""));
+                return {
+                  template: decodeScenarioTemplate(String(record.template_json ?? "")),
+                  templateVersion: String(record.template_version ?? "")
+                };
               },
               catch: (cause) => new DbError({ reason: String(cause) })
             })
+          ),
+          Effect.flatMap((record) =>
+            deriveTemplateVersion(record.template, record.templateVersion).pipe(
+              Effect.map((templateVersion) => ({
+                template: record.template,
+                templateVersion
+              }))
+            )
           )
         ),
       insertTurn: (submission: TurnSubmission) =>
@@ -215,10 +242,21 @@ export const DbLive = Layer.effect(
             Effect.try({
               try: () => {
                 const record = row as Record<string, unknown>;
-                return decodeScenarioTemplate(String(record.template_json ?? ""));
+                return {
+                  template: decodeScenarioTemplate(String(record.template_json ?? "")),
+                  templateVersion: String(record.template_version ?? "")
+                };
               },
               catch: (cause) => new DbError({ reason: String(cause) })
             })
+          ),
+          Effect.flatMap((record) =>
+            deriveTemplateVersion(record.template, record.templateVersion).pipe(
+              Effect.map((templateVersion) => ({
+                template: record.template,
+                templateVersion
+              }))
+            )
           )
         ),
       updateTurnAudioKey: (input: { turnId: string; audioKey: string }) =>
@@ -326,15 +364,23 @@ export const DbLive = Layer.effect(
         region: string;
         register: string;
       }) =>
-        run(queries.insertScenarioTemplate, [
-          input.template.templateId,
-          input.template.topic,
-          input.template.level,
-          input.region,
-          input.register,
-          JSON.stringify(Schema.encodeSync(ScenarioTemplate)(input.template)),
-          Date.now()
-        ])
+        Effect.gen(function* () {
+          const encoded = encodeScenarioTemplate(input.template);
+          const templateJson = stableJsonStringify(encoded);
+          const templateVersion = yield* hashSha256(templateJson).pipe(
+            Effect.mapError((cause) => new DbError({ reason: String(cause) }))
+          );
+          yield* run(queries.insertScenarioTemplate, [
+            input.template.templateId,
+            input.template.topic,
+            input.template.level,
+            input.region,
+            input.register,
+            templateVersion,
+            templateJson,
+            Date.now()
+          ]);
+        })
     };
   })
 );

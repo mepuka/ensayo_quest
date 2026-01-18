@@ -12,9 +12,9 @@ export const queries = {
   updateTurnAudioKey:
     "UPDATE turns SET audio_key = ? WHERE id = ?",
   selectScenarioTemplateById:
-    "SELECT template_json FROM scenario_templates WHERE id = ?",
+    "SELECT template_json, template_version FROM scenario_templates WHERE id = ?",
   selectScenarioTemplateByTopicLevel:
-    "SELECT template_json FROM scenario_templates WHERE topic = ? AND level = ? LIMIT 1",
+    "SELECT template_json, template_version FROM scenario_templates WHERE topic = ? AND level = ? LIMIT 1",
   updateTurnScore:
     "INSERT INTO turn_scores (turn_id, overall, detail_json) VALUES (?, ?, ?) ON CONFLICT(turn_id) DO UPDATE SET overall = excluded.overall, detail_json = excluded.detail_json",
   // Queue idempotency
@@ -47,5 +47,5 @@ export const queries = {
     "INSERT INTO audio_upload_requests (turn_id, request_id, audio_key, uploaded_at) VALUES (?, ?, ?, ?)",
   // Scenario template seeding
   insertScenarioTemplate:
-    "INSERT OR REPLACE INTO scenario_templates (id, topic, level, region, register, template_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT OR REPLACE INTO scenario_templates (id, topic, level, region, register, template_version, template_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 };

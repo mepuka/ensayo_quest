@@ -27,12 +27,15 @@ it("createRoom returns cached roomId on retry and re-emits RoomInitialized", asy
           }),
         findScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "template-1",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Bienvenido",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "template-1",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Bienvenido",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-1"
           }),
         insertTurn: () => Effect.void,
         getTurnSubmission: () =>
@@ -47,12 +50,15 @@ it("createRoom returns cached roomId on retry and re-emits RoomInitialized", asy
           }),
         getScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "template-1",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Bienvenido",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "template-1",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Bienvenido",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-1"
           }),
         getRoomTemplateId: () => Effect.succeed("template-1"),
         getNextTurnIndex: () => Effect.succeed(0),
@@ -107,12 +113,15 @@ it("createRoom selects a scenario, emits RoomInitialized, and returns its seed p
           }),
         findScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "template-1",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Bienvenido",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "template-1",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Bienvenido",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-1"
           }),
         insertTurn: () => Effect.void,
         getTurnSubmission: () =>
@@ -127,12 +136,15 @@ it("createRoom selects a scenario, emits RoomInitialized, and returns its seed p
           }),
         getScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "tmp",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Hola",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "tmp",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Hola",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-2"
           }),
         getRoomTemplateId: () => Effect.succeed("tmp"),
         getNextTurnIndex: () => Effect.succeed(0),
@@ -211,23 +223,29 @@ it("submitTurn records turn and emits TurnAccepted (without enqueuing scoring)",
           }),
         getScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "tmp",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Hola",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "tmp",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Hola",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-2"
           }),
         getRoomTemplateId: () => Effect.succeed("template-1"),
         getNextTurnIndex: () => Effect.succeed(2),
         findScenarioTemplate: () =>
           Effect.succeed({
-            templateId: "template-1",
-            topic: "travel",
-            level: "A1",
-            seedPrompt: "Hola",
-            turnPlan: [],
-            roleRubrics: []
+            template: {
+              templateId: "template-1",
+              topic: "travel",
+              level: "A1",
+              seedPrompt: "Hola",
+              turnPlan: [],
+              roleRubrics: []
+            },
+            templateVersion: "tpl-version-3"
           }),
         updateTurnAudioKey: () => Effect.void,
         updateTurnScore: () => Effect.void,
@@ -303,23 +321,29 @@ it("submitTurn rejects when Turnstile check fails", async () => {
             }),
           getScenarioTemplate: () =>
             Effect.succeed({
-              templateId: "tmp",
-              topic: "travel",
-              level: "A1",
-              seedPrompt: "Hola",
-              turnPlan: [],
-              roleRubrics: []
+              template: {
+                templateId: "tmp",
+                topic: "travel",
+                level: "A1",
+                seedPrompt: "Hola",
+                turnPlan: [],
+                roleRubrics: []
+              },
+              templateVersion: "tpl-version-4"
             }),
           getRoomTemplateId: () => Effect.succeed("template-1"),
           getNextTurnIndex: () => Effect.succeed(2),
           findScenarioTemplate: () =>
             Effect.succeed({
-              templateId: "template-1",
-              topic: "travel",
-              level: "A1",
-              seedPrompt: "Hola",
-              turnPlan: [],
-              roleRubrics: []
+              template: {
+                templateId: "template-1",
+                topic: "travel",
+                level: "A1",
+                seedPrompt: "Hola",
+                turnPlan: [],
+                roleRubrics: []
+              },
+              templateVersion: "tpl-version-5"
             }),
           updateTurnAudioKey: () => Effect.void,
           updateTurnScore: () => Effect.void,

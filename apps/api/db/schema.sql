@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS scenario_templates (
   level TEXT NOT NULL,
   region TEXT NOT NULL,
   register TEXT NOT NULL,
+  template_version TEXT NOT NULL,
   template_json TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );

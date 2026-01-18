@@ -70,7 +70,7 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
     // (same pattern as uploadTurnAudio - DB succeeded but DO might have failed)
     // DO handler has its own idempotency guard
     const templateId = yield* db.getRoomTemplateId(existingRoomId);
-    const template = yield* db.getScenarioTemplate(templateId);
+    const templateRecord = yield* db.getScenarioTemplate(templateId);
 
     // STRICT IDEMPOTENCY: Use template's canonical topic/level, NOT input
     // First request "wins" - subsequent retries with same requestId get identical result
@@ -80,23 +80,24 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
         type: "RoomInitialized",
         roomId: existingRoomId,
         scenarioId: templateId,
-        seedPrompt: template.seedPrompt,
-        topic: template.topic,
-        level: template.level,
+        seedPrompt: templateRecord.template.seedPrompt,
+        topic: templateRecord.template.topic,
+        level: templateRecord.template.level,
+        templateVersion: templateRecord.templateVersion,
         timestamp: Date.now()
       })
     );
 
-    return { roomId: existingRoomId, seedPrompt: template.seedPrompt };
+    return { roomId: existingRoomId, seedPrompt: templateRecord.template.seedPrompt };
   }
 
   // First request - create room
   const roomId = yield* generator.generate;
-  const template = yield* db.findScenarioTemplate({
+  const templateRecord = yield* db.findScenarioTemplate({
     topic: input.topic,
     level: input.level
   });
-  yield* db.createRoom(roomId, template.templateId);
+  yield* db.createRoom(roomId, templateRecord.template.templateId);
   yield* db.recordRoomRequest(input.requestId, roomId);
 
   // Emit RoomInitialized event
@@ -105,15 +106,16 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
     new RoomInitialized({
       type: "RoomInitialized",
       roomId,
-      scenarioId: template.templateId,
-      seedPrompt: template.seedPrompt,
+      scenarioId: templateRecord.template.templateId,
+      seedPrompt: templateRecord.template.seedPrompt,
       topic: input.topic,
       level: input.level,
+      templateVersion: templateRecord.templateVersion,
       timestamp: Date.now()
     })
   );
 
-  return { roomId, seedPrompt: template.seedPrompt };
+  return { roomId, seedPrompt: templateRecord.template.seedPrompt };
 });
 
 /**

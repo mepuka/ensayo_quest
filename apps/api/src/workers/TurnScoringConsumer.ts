@@ -69,7 +69,7 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
           return new TurnScoringRetryableError({ reason });
         })
       );
-      const template = yield* db.getScenarioTemplate(submission.templateId).pipe(
+      const templateRecord = yield* db.getScenarioTemplate(submission.templateId).pipe(
         Effect.mapError((cause) => {
           const reason = String(cause);
           if (reason.includes("not_found")) {
@@ -78,7 +78,8 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
           return new TurnScoringRetryableError({ reason });
         })
       );
-      const targetVocab = template.roleRubrics[0]?.targetVocab ?? [];
+      const scoreAttemptId = crypto.randomUUID();
+      const targetVocab = templateRecord.template.roleRubrics[0]?.targetVocab ?? [];
       // Scoring service errors are typically retryable (external API issues)
       const evaluation = yield* scoring.evaluate({
         turnId: submission.turnId,
@@ -111,6 +112,8 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
         new ScoreUpdated({
           type: "ScoreUpdated",
           turnId: job.turnId,
+          status: "final",
+          scoreAttemptId,
           evaluation
         })
       ).pipe(

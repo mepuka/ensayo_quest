@@ -19,7 +19,7 @@ export type RoomStatus = "connecting" | "playing" | "completed" | "error";
  * - pending: Turn accepted, awaiting score
  * - scored: Turn has been scored
  */
-export type TurnScoringStatus = "idle" | "pending" | "scored";
+export type TurnScoringStatus = "idle" | "pending" | "partial" | "scored";
 
 /**
  * Current turn scoring state.
@@ -210,14 +210,30 @@ const handleTurnAccepted: EventHandler<Extract<RoomEvent, { type: "TurnAccepted"
 const handleScoreUpdated: EventHandler<Extract<RoomEvent, { type: "ScoreUpdated" }>> = (
   state,
   event
-) => ({
-  ...state,
-  turn: {
-    turnId: event.turnId,
-    scoringStatus: "scored",
-    evaluation: event.evaluation
+) => {
+  if (event.status === "partial") {
+    if (state.turn.scoringStatus === "scored") {
+      return state;
+    }
+    return {
+      ...state,
+      turn: {
+        turnId: event.turnId,
+        scoringStatus: "partial",
+        evaluation: event.evaluation
+      }
+    };
   }
-});
+
+  return {
+    ...state,
+    turn: {
+      turnId: event.turnId,
+      scoringStatus: "scored",
+      evaluation: event.evaluation
+    }
+  };
+};
 
 /**
  * Handle RoomCompleted - session finished successfully.
@@ -406,7 +422,11 @@ export const initialScorePanelState = (turnId: string): ScorePanelState => ({
  */
 export const deriveScorePanelState = (state: RoomState): ScorePanelState => ({
   turnId: state.turn.turnId ?? "unknown",
-  status: state.turn.scoringStatus === "scored" ? "final" : "pending",
+  status: state.turn.scoringStatus === "scored"
+    ? "final"
+    : state.turn.scoringStatus === "partial"
+      ? "partial"
+      : "pending",
   overall: state.turn.evaluation?.overallScore ?? null,
   npcPrompt: state.turn.evaluation?.nextPrompt ?? null
 });

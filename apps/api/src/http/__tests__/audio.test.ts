@@ -9,12 +9,15 @@ const makeTestDb = (overrides: Partial<DbService> = {}): DbService => ({
   createRoom: () => Effect.void as any,
   findScenarioTemplate: () =>
     Effect.succeed({
-      templateId: "tmp",
-      topic: "travel",
-      level: "A1",
-      seedPrompt: "Hola",
-      turnPlan: [],
-      roleRubrics: []
+      template: {
+        templateId: "tmp",
+        topic: "travel",
+        level: "A1",
+        seedPrompt: "Hola",
+        turnPlan: [],
+        roleRubrics: []
+      },
+      templateVersion: "tpl-version-1"
     }),
   insertTurn: () => Effect.void,
   getRoomTemplateId: () => Effect.succeed("tmp"),
@@ -31,12 +34,15 @@ const makeTestDb = (overrides: Partial<DbService> = {}): DbService => ({
     }),
   getScenarioTemplate: () =>
     Effect.succeed({
-      templateId: "tmp",
-      topic: "travel",
-      level: "A1",
-      seedPrompt: "Hola",
-      turnPlan: [],
-      roleRubrics: []
+      template: {
+        templateId: "tmp",
+        topic: "travel",
+        level: "A1",
+        seedPrompt: "Hola",
+        turnPlan: [],
+        roleRubrics: []
+      },
+      templateVersion: "tpl-version-1"
     }),
   updateTurnAudioKey: () => Effect.void,
   updateTurnScore: () => Effect.void,

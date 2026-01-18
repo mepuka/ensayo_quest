@@ -17,6 +17,8 @@ import {
 const scorePayload = {
   roomId: "room-1",
   turnId: "turn-1",
+  status: "final",
+  scoreAttemptId: "score-attempt-1",
   scores: {
     fluency: 0.7,
     vocab: 0.6,
@@ -33,6 +35,8 @@ const scorePayload = {
 const expectedScoreEvent: RoomEvent = {
   type: "ScoreUpdated",
   turnId: "turn-1",
+  status: "final",
+  scoreAttemptId: "score-attempt-1",
   evaluation: {
     turnId: "turn-1",
     scores: {

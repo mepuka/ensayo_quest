@@ -21,6 +21,7 @@ it("builds score update payloads", () => {
   });
   expect(payload.event).toBe("ScoreUpdated");
   expect(payload.turnId).toBe("t1");
+  expect(payload.scoreAttemptId).toBe("score-attempt");
 });
 
 it("builds npc prompt update payloads", () => {

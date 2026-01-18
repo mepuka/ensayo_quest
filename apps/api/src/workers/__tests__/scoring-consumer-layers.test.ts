@@ -130,7 +130,10 @@ describe("TurnScoringConsumer with Test Layers", () => {
         findScenarioTemplate: ({ topic, level }: { topic: string; level: string }) => {
           for (const scenario of dbState.scenarios.values()) {
             if (scenario.topic === topic && scenario.level === level) {
-              return Effect.succeed(scenario);
+              return Effect.succeed({
+                template: scenario,
+                templateVersion: "tpl-version-test"
+              });
             }
           }
           return Effect.fail(new DbError({ reason: "scenario_not_found" }));
@@ -138,7 +141,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
         getScenarioTemplate: (templateId: string) => {
           const scenario = dbState.scenarios.get(templateId);
           return scenario
-            ? Effect.succeed(scenario)
+            ? Effect.succeed({ template: scenario, templateVersion: "tpl-version-test" })
             : Effect.fail(new DbError({ reason: "scenario_not_found" }));
         },
         insertScenarioTemplate: () => Effect.void,

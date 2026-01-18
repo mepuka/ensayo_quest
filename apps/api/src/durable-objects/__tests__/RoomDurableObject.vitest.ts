@@ -81,6 +81,7 @@ describe("RoomDurableObject Integration", () => {
             seedPrompt: "Estás en un restaurante...",
             topic: "food",
             level: "A2",
+            templateVersion: "tpl-version-test",
             timestamp: Date.now(),
           });
 
@@ -107,6 +108,7 @@ describe("RoomDurableObject Integration", () => {
             seedPrompt: "En el aeropuerto...",
             topic: "travel",
             level: "B1",
+            templateVersion: "tpl-version-test",
             timestamp: Date.now(),
           });
 
@@ -138,6 +140,7 @@ describe("RoomDurableObject Integration", () => {
             seedPrompt: "En la tienda...",
             topic: "shopping",
             level: "A1",
+            templateVersion: "tpl-version-test",
             timestamp: Date.now(),
           });
 
@@ -176,6 +179,7 @@ describe("RoomDurableObject Integration", () => {
             seedPrompt: "En el café...",
             topic: "food",
             level: "A2",
+            templateVersion: "tpl-version-test",
             timestamp: Date.now(),
           });
 
@@ -234,6 +238,7 @@ describe("RoomDurableObject Integration", () => {
             seedPrompt: "En el trabajo...",
             topic: "work",
             level: "B2",
+            templateVersion: "tpl-version-test",
             timestamp: Date.now(),
           });
 

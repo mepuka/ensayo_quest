@@ -11,6 +11,8 @@ describe("roomStateStreamFromEvents", () => {
       {
         type: "ScoreUpdated",
         turnId: "turn-1",
+        status: "final",
+        scoreAttemptId: "score-attempt-1",
         evaluation: {
           turnId: "turn-1",
           scores: { fluency: 0.7, vocab: 0.6, naturalness: 0.8 },
@@ -48,6 +50,8 @@ describe("roomStateStreamFromEvents", () => {
       {
         type: "ScoreUpdated",
         turnId: "turn-1",
+        status: "final",
+        scoreAttemptId: "score-attempt-2",
         evaluation: {
           turnId: "turn-1",
           scores: { fluency: 0.7, vocab: 0.6, naturalness: 0.8 },

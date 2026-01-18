@@ -36,12 +36,15 @@ it.skip("emits ScoreUpdated with language review feedback", async () => {
     getNextTurnIndex: () => Effect.succeed(0),
     findScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "restaurant",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: [{ roleId: "A", targetVocab: ["menu"], targetGrammar: [] }]
+        template: {
+          templateId: "template-1",
+          topic: "restaurant",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: [{ roleId: "A", targetVocab: ["menu"], targetGrammar: [] }]
+        },
+        templateVersion: "tpl-version-1"
       }),
     getTurnSubmission: () =>
       Effect.succeed({
@@ -55,12 +58,15 @@ it.skip("emits ScoreUpdated with language review feedback", async () => {
       }),
     getScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "restaurant",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: [{ roleId: "A", targetVocab: ["menu"], targetGrammar: [] }]
+        template: {
+          templateId: "template-1",
+          topic: "restaurant",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: [{ roleId: "A", targetVocab: ["menu"], targetGrammar: [] }]
+        },
+        templateVersion: "tpl-version-1"
       }),
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,

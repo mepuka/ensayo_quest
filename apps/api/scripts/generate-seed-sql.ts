@@ -18,6 +18,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { seedScenarios, validateSeedCompleteness } from "../src/seed/SeedData";
 import { ScenarioTemplate } from "../src/domain/ScenarioTemplate";
+import { hashSha256, stableJsonStringify } from "../src/domain/TemplateVersion";
 
 const main = Effect.gen(function* () {
   // 1. Validate seed data completeness
@@ -43,15 +44,18 @@ const main = Effect.gen(function* () {
   // Seed scenarios
   console.log("-- Scenario templates");
   for (const seed of seedScenarios) {
-    const json = JSON.stringify(encode(seed.template)).replace(/'/g, "''");
+    const encoded = encode(seed.template);
+    const json = stableJsonStringify(encoded).replace(/'/g, "''");
+    const templateVersion = yield* hashSha256(json);
     console.log(`INSERT OR REPLACE INTO scenario_templates`);
-    console.log(`  (id, topic, level, region, register, template_json, created_at)`);
+    console.log(`  (id, topic, level, region, register, template_version, template_json, created_at)`);
     console.log(`VALUES (`);
     console.log(`  '${seed.template.templateId}',`);
     console.log(`  '${seed.template.topic}',`);
     console.log(`  '${seed.template.level}',`);
     console.log(`  '${seed.region}',`);
     console.log(`  '${seed.register}',`);
+    console.log(`  '${templateVersion}',`);
     console.log(`  '${json}',`);
     console.log(`  strftime('%s','now')`);
     console.log(`);`);

@@ -41,6 +41,8 @@ export class TurnAcceptedPayload extends Schema.Class<TurnAcceptedPayload>("Turn
 export class ScoreUpdatedPayload extends Schema.Class<ScoreUpdatedPayload>("ScoreUpdatedPayload")({
   roomId: Schema.String,
   turnId: Schema.String,
+  status: Schema.Literal("partial", "final"),
+  scoreAttemptId: Schema.String,
   scores: Schema.Struct({
     fluency: Schema.Number,
     vocab: Schema.Number,
@@ -112,6 +114,7 @@ export class RoomInitializedPayload extends Schema.Class<RoomInitializedPayload>
   seedPrompt: Schema.String,
   topic: Schema.String,
   level: Schema.String,
+  templateVersion: Schema.String,
   timestamp: Schema.Number
 }) {}
 

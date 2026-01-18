@@ -107,7 +107,10 @@ export const makeDbTestLayer = (state: DbTestState = makeDbTestState()) =>
       findScenarioTemplate: ({ topic, level }) => {
         for (const scenario of state.scenarios.values()) {
           if (scenario.topic === topic && scenario.level === level) {
-            return Effect.succeed(scenario);
+            return Effect.succeed({
+              template: scenario,
+              templateVersion: "tpl-version-test"
+            });
           }
         }
         return Effect.fail(new DbError({ reason: "scenario_not_found" }));
@@ -116,7 +119,7 @@ export const makeDbTestLayer = (state: DbTestState = makeDbTestState()) =>
       getScenarioTemplate: (templateId) => {
         const scenario = state.scenarios.get(templateId);
         return scenario
-          ? Effect.succeed(scenario)
+          ? Effect.succeed({ template: scenario, templateVersion: "tpl-version-test" })
           : Effect.fail(new DbError({ reason: "scenario_not_found" }));
       },
 

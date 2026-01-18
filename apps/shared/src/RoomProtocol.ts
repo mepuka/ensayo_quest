@@ -42,6 +42,7 @@ export class RoomInitialized extends Schema.Class<RoomInitialized>("RoomInitiali
   seedPrompt: Schema.String,
   topic: Schema.String,
   level: Schema.String,
+  templateVersion: Schema.String,
   timestamp: Schema.Number
 }) {}
 
@@ -67,6 +68,8 @@ export class TurnAccepted extends Schema.Class<TurnAccepted>("TurnAccepted")({
 export class ScoreUpdated extends Schema.Class<ScoreUpdated>("ScoreUpdated")({
   type: Schema.Literal("ScoreUpdated"),
   turnId: Schema.String,
+  status: Schema.Literal("partial", "final"),
+  scoreAttemptId: Schema.String,
   evaluation: TurnEvaluation
 }) {}
 
@@ -162,6 +165,7 @@ const RoomInitializedPayloadSchema = Schema.Struct({
   seedPrompt: Schema.String,
   topic: Schema.String,
   level: Schema.String,
+  templateVersion: Schema.String,
   timestamp: Schema.Number
 });
 
@@ -176,6 +180,8 @@ const TurnAcceptedPayloadSchema = Schema.Struct({
 const ScoreUpdatedPayloadSchema = Schema.Struct({
   roomId: Schema.String,
   turnId: Schema.String,
+  status: Schema.Literal("partial", "final"),
+  scoreAttemptId: Schema.String,
   scores: Schema.Struct({
     fluency: Schema.Number,
     vocab: Schema.Number,
@@ -292,6 +298,7 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
         seedPrompt: payload.seedPrompt,
         topic: payload.topic,
         level: payload.level,
+        templateVersion: payload.templateVersion,
         timestamp: payload.timestamp
       };
     }
@@ -311,6 +318,8 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
       return {
         type: "ScoreUpdated",
         turnId: payload.turnId,
+        status: payload.status,
+        scoreAttemptId: payload.scoreAttemptId,
         evaluation: {
           turnId: payload.turnId,
           scores: payload.scores,

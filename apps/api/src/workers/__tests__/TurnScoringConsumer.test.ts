@@ -36,18 +36,21 @@ it("scores turn and emits ScoreUpdated", async () => {
     getNextTurnIndex: () => Effect.succeed(0),
     findScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: [
-          {
-            roleId: "user",
-            targetVocab: ["adios"],
-            targetGrammar: []
-          }
-        ]
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: [
+            {
+              roleId: "user",
+              targetVocab: ["adios"],
+              targetGrammar: []
+            }
+          ]
+        },
+        templateVersion: "tpl-version-1"
       }),
     getTurnSubmission: () =>
       Effect.succeed({
@@ -61,18 +64,21 @@ it("scores turn and emits ScoreUpdated", async () => {
       }),
     getScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: [
-          {
-            roleId: "user",
-            targetVocab: ["adios"],
-            targetGrammar: []
-          }
-        ]
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: [
+            {
+              roleId: "user",
+              targetVocab: ["adios"],
+              targetGrammar: []
+            }
+          ]
+        },
+        templateVersion: "tpl-version-1"
       }),
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,
@@ -147,12 +153,15 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
     getNextTurnIndex: () => Effect.succeed(0),
     findScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: []
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: []
+        },
+        templateVersion: "tpl-version-1"
       }),
     getTurnSubmission: () =>
       Effect.succeed({
@@ -166,12 +175,15 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
       }),
     getScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola",
-        turnPlan: [],
-        roleRubrics: []
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola",
+          turnPlan: [],
+          roleRubrics: []
+        },
+        templateVersion: "tpl-version-1"
       }),
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,

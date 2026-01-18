@@ -52,18 +52,21 @@ const makeDbLayer = (options?: {
     getNextTurnIndex: () => Effect.succeed(0),
     findScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola, ¿cómo estás?",
-        turnPlan: [],
-        roleRubrics: [
-          {
-            roleId: "user",
-            targetVocab: ["hola", "gracias", "buenos días"],
-            targetGrammar: []
-          }
-        ]
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola, ¿cómo estás?",
+          turnPlan: [],
+          roleRubrics: [
+            {
+              roleId: "user",
+              targetVocab: ["hola", "gracias", "buenos días"],
+              targetGrammar: []
+            }
+          ]
+        },
+        templateVersion: "tpl-version-1"
       }),
     getTurnSubmission: () =>
       Effect.succeed({
@@ -85,18 +88,21 @@ const makeDbLayer = (options?: {
       }),
     getScenarioTemplate: () =>
       Effect.succeed({
-        templateId: "template-1",
-        topic: "travel",
-        level: "A2",
-        seedPrompt: "Hola, ¿cómo estás?",
-        turnPlan: [],
-        roleRubrics: [
-          {
-            roleId: "user",
-            targetVocab: ["hola", "gracias", "buenos días"],
-            targetGrammar: []
-          }
-        ]
+        template: {
+          templateId: "template-1",
+          topic: "travel",
+          level: "A2",
+          seedPrompt: "Hola, ¿cómo estás?",
+          turnPlan: [],
+          roleRubrics: [
+            {
+              roleId: "user",
+              targetVocab: ["hola", "gracias", "buenos días"],
+              targetGrammar: []
+            }
+          ]
+        },
+        templateVersion: "tpl-version-1"
       }),
     isMessageProcessed: () => Effect.succeed(false),
     markMessageProcessed: () => Effect.void,

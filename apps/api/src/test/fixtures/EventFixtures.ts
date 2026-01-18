@@ -33,6 +33,7 @@ const RoomInitializedDefaults = {
   seedPrompt: "Hola, bienvenido.",
   topic: "travel",
   level: "A2",
+  templateVersion: "tpl-version-test",
   timestamp: now()
 };
 
@@ -89,6 +90,8 @@ export const TurnAcceptedFixtures = {
 const ScoreUpdatedDefaults = {
   roomId: "room-test",
   turnId: "turn-test",
+  status: "final" as const,
+  scoreAttemptId: "score-attempt-test",
   scores: {
     fluency: 75,
     vocab: 80,
