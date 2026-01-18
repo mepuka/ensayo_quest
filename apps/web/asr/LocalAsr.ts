@@ -6,15 +6,11 @@ import { BrowserWorker } from "@effect/platform-browser";
 import type { ASRResult } from "./types";
 import { WorkletCapture, WorkletCaptureLive } from "./worklet/WorkletCapture";
 import {
-  createWorkerClient,
-  type AsrWorker,
-  encodeTranscribeRequest,
-  encodePreloadRequest,
-  type WorkerRequest,
-  type TranscribeResponse,
-  type PreloadResponse
+  ASRWorkerRequest,
+  Preload,
+  Transcribe,
+  type PreloadEvent
 } from "./worker/WorkerClient";
-import { TranscriptionFailed } from "./errors";
 import { appendAudioBuffer } from "./audioBuffer";
 
 export interface LocalAsrService {
@@ -24,9 +20,13 @@ export interface LocalAsrService {
    * Preload the Whisper model in the worker.
    * Call during app initialization for better UX.
    *
+   * @param onProgress - Optional callback to receive progress events during model loading.
+   *   Receives PreloadProgress events during download (status, file, progress, loaded, total)
+   *   and a final PreloadComplete event when done.
+   *
    * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
    */
-  preload: () => Effect.Effect<{ status: "loaded" | "already_loaded" }, Error, never>;
+  preload: (onProgress?: (event: PreloadEvent) => void) => Effect.Effect<{ status: "loaded" | "already_loaded" }, Error, never>;
   /**
    * Transcribe audio directly (for VAD-captured audio).
    * Use this when audio is captured externally (e.g., by MicVAD).
@@ -57,22 +57,11 @@ export const browserWorkerLayer = BrowserWorker.layer(spawnBrowserWorker);
 
 // Scoped resource: worker is spawned eagerly and terminated when scope closes
 export const makeLocalAsr = Effect.gen(function* () {
-  const manager = yield* PlatformWorker.WorkerManager;
-  const spawner = yield* PlatformWorker.Spawner;
   const capture = yield* WorkletCapture;
 
+  // Create serialized worker client - handles schema encode/decode automatically
   // Worker spawned in service scope - will be cleaned up when layer scope closes
-  const worker = yield* manager
-    .spawn<WorkerRequest, TranscribeResponse | PreloadResponse, TranscriptionFailed>({
-      encode: (message) =>
-        Effect.succeed(
-          message.type === "preload"
-            ? encodePreloadRequest(message)
-            : encodeTranscribeRequest(message)
-        )
-    })
-    .pipe(Effect.provideService(PlatformWorker.Spawner, spawner));
-  const client = createWorkerClient(worker);
+  const worker = yield* PlatformWorker.makeSerialized<ASRWorkerRequest>({});
 
   const bufferRef = yield* Ref.make<Float32Array<ArrayBufferLike>>(new Float32Array());
   const sampleRateRef = yield* Ref.make(16000);
@@ -106,7 +95,15 @@ export const makeLocalAsr = Effect.gen(function* () {
     const sampleRate = yield* Ref.get(sampleRateRef);
     yield* Ref.set(bufferRef, new Float32Array());
     // Worker is now guaranteed to exist (created eagerly in service scope)
-    const response = yield* client.transcribe(audio, sampleRate);
+    // Use executeEffect for single-response transcription
+    const response = yield* worker.executeEffect(
+      new Transcribe({
+        requestId: crypto.randomUUID(),
+        audio,
+        sampleRate,
+        config: undefined
+      })
+    );
     const durationMs =
       sampleRate > 0 ? Math.round((audio.length / sampleRate) * 1000) : 0;
     return {
@@ -120,26 +117,59 @@ export const makeLocalAsr = Effect.gen(function* () {
 
   /**
    * Preload the Whisper model in the worker.
+   * Consumes the progress stream from the worker, calling onProgress for each event.
    * Returns status indicating whether model was newly loaded or already cached.
    *
+   * @param onProgress - Optional callback for progress events during model loading
    * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
    */
-  const preload = Effect.fn(function* () {
-    const response = yield* client.preload();
-    return { status: response.status };
-  }, Effect.mapError((cause) => new Error(String(cause))));
+  const preload = (onProgress?: (event: PreloadEvent) => void) =>
+    Effect.gen(function* () {
+      // Use execute() for streaming response (Preload returns Stream<PreloadEvent>)
+      const progressStream = worker.execute(
+        new Preload({
+          requestId: crypto.randomUUID(),
+          config: undefined
+        })
+      );
+
+      // Track final status from the PreloadComplete event
+      let finalStatus: "loaded" | "already_loaded" = "loaded";
+
+      // Consume the stream, calling onProgress for each event
+      yield* Stream.runForEach(progressStream, (event) =>
+        Effect.sync(() => {
+          // Call the progress callback if provided
+          onProgress?.(event);
+          // Capture the final status from PreloadComplete event
+          if (event._tag === "PreloadComplete") {
+            finalStatus = event.status;
+          }
+        })
+      );
+
+      return { status: finalStatus };
+    }).pipe(Effect.mapError((cause) => new Error(String(cause))));
 
   /**
    * Transcribe audio directly (for VAD-captured audio).
    * Sends audio to the ASR worker without using WorkletCapture.
+   * Uses executeEffect for single-response transcription.
    *
    * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
    */
   const transcribe = (audio: Float32Array, sampleRate: number) =>
-    Effect.fn(function* () {
-      const response = yield* client.transcribe(audio, sampleRate);
+    Effect.gen(function* () {
+      const response = yield* worker.executeEffect(
+        new Transcribe({
+          requestId: crypto.randomUUID(),
+          audio,
+          sampleRate,
+          config: undefined
+        })
+      );
       return { transcript: response.transcript };
-    }, Effect.mapError((cause) => new Error(String(cause))))();
+    }).pipe(Effect.mapError((cause) => new Error(String(cause))));
 
   return { start, stop, preload, transcribe };
 });
