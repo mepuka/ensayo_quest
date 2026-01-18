@@ -47,6 +47,12 @@ export class CreateRoomResponse extends Schema.Class<CreateRoomResponse>("Create
   seedPrompt: Schema.String
 }) {}
 
+export class RoomWsResponse extends Schema.Class<RoomWsResponse>("RoomWsResponse")({
+  roomId: Schema.String,
+  /** WebSocket URL for room connection. Always provided by backend. */
+  wsUrl: Schema.String
+}) {}
+
 export class SubmitTurnResponse extends Schema.Class<SubmitTurnResponse>("SubmitTurnResponse")({
   turnId: Schema.String,
   status: Schema.String
@@ -72,6 +78,8 @@ export const decodeCreateRoomRequest = Schema.decodeUnknownSync(CreateRoomReques
 export const encodeCreateRoomRequest = Schema.encodeSync(CreateRoomRequest);
 export const decodeCreateRoomResponse = Schema.decodeUnknownSync(CreateRoomResponse);
 export const encodeCreateRoomResponse = Schema.encodeSync(CreateRoomResponse);
+export const decodeRoomWsResponse = Schema.decodeUnknownSync(RoomWsResponse);
+export const encodeRoomWsResponse = Schema.encodeSync(RoomWsResponse);
 export const decodeSubmitTurnResponse = Schema.decodeUnknownSync(SubmitTurnResponse);
 export const encodeSubmitTurnResponse = Schema.encodeSync(SubmitTurnResponse);
 export const decodeTurnAudioResponse = Schema.decodeUnknownSync(TurnAudioResponse);
@@ -88,5 +96,6 @@ export const encodeHttpTurnSubmission = Schema.encodeSync(HttpTurnSubmission);
 export type CreateRoomInput = Schema.Schema.Type<typeof CreateRoomRequest>;
 export type SubmitTurnInput = Schema.Schema.Type<typeof HttpTurnSubmission>;
 export type CreateRoomResult = Schema.Schema.Type<typeof CreateRoomResponse>;
+export type RoomWsResult = Schema.Schema.Type<typeof RoomWsResponse>;
 export type SubmitTurnResult = Schema.Schema.Type<typeof SubmitTurnResponse>;
 export type UploadAudioResult = Schema.Schema.Type<typeof TurnAudioResponse>;

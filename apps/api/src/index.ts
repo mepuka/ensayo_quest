@@ -3,7 +3,13 @@ import * as Schema from "effect/Schema";
 import type { MessageBatch, ExecutionContext } from "@cloudflare/workers-types";
 import { encodeJson } from "./http/codec";
 import { handlers } from "./http/handlers";
-import { CreateRoomRequest, CreateRoomResponse, SubmitTurnResponse, TurnAudioResponse } from "./domain/HttpProtocol";
+import {
+  CreateRoomRequest,
+  CreateRoomResponse,
+  RoomWsResponse,
+  SubmitTurnResponse,
+  TurnAudioResponse
+} from "./domain/HttpProtocol";
 import type { CloudflareEnv } from "./services/Env";
 import { Env } from "./services/Env";
 import { DbLive } from "./services/Db";
@@ -205,6 +211,17 @@ export default {
           wsUrl: wsUrlForRoom(env, request, created.roomId),
           seedPrompt: created.seedPrompt
         }), 201);
+      }
+
+      // Route: GET /api/rooms/:roomId/ws
+      const roomWsParams = matchRoute(method, segments, routes.roomWs);
+      if (roomWsParams) {
+        const roomId = roomWsParams.roomId ?? "";
+        if (!roomId) return new Response("Not Found", { status: 404 });
+        return jsonResponse(RoomWsResponse, new RoomWsResponse({
+          roomId,
+          wsUrl: wsUrlForRoom(env, request, roomId)
+        }));
       }
 
       // Route: POST /api/rooms/:roomId/turns

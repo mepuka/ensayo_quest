@@ -12,6 +12,7 @@ export {
   HttpTurnSubmission,
   // Response schemas
   CreateRoomResponse,
+  RoomWsResponse,
   SubmitTurnResponse,
   TurnAudioResponse,
   HttpErrorResponse,
@@ -20,6 +21,8 @@ export {
   encodeCreateRoomRequest,
   decodeCreateRoomResponse,
   encodeCreateRoomResponse,
+  decodeRoomWsResponse,
+  encodeRoomWsResponse,
   decodeSubmitTurnResponse,
   encodeSubmitTurnResponse,
   decodeTurnAudioResponse,
@@ -30,6 +33,7 @@ export {
   encodeHttpTurnSubmission,
   // Types
   type CreateRoomInput,
+  type RoomWsResult,
   type SubmitTurnInput,
   type CreateRoomResult,
   type SubmitTurnResult,

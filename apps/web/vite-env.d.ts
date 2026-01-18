@@ -2,9 +2,9 @@
 
 interface ImportMetaEnv {
   /**
-   * WebSocket base URL for connecting to Workers API.
-   * Required in Pages deployment (Pages Functions cannot proxy WebSocket).
-   * Falls back to window.location.href when not set (local dev).
+   * Optional override for WebSocket base URL.
+   * Resolved via /api/rooms/:roomId/ws when possible; falls back to this value
+   * or window.location.href when not set (local dev).
    *
    * Example: "https://ensayo-quest-api-staging.kokokessy.workers.dev"
    */

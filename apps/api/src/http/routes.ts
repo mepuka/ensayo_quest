@@ -34,6 +34,13 @@ export const routes = {
     paramIndices: { roomId: 2 }
   },
 
+  /** GET /api/rooms/:roomId/ws - Resolve WebSocket URL for room */
+  roomWs: {
+    method: "GET",
+    segments: ["api", "rooms", ":roomId", "ws"],
+    paramIndices: { roomId: 2 }
+  },
+
   /** POST /api/turns/:turnId/audio - Upload audio for a turn */
   uploadAudio: {
     method: "POST",

@@ -6,6 +6,7 @@ it("exposes minimum API routes", () => {
     "createRoom",
     "submitTurn",
     "streamRoom",
+    "roomWs",
     "uploadAudio"
   ]);
 });
@@ -23,6 +24,11 @@ it("matches submitTurn route with parameter", () => {
 it("matches streamRoom route with parameter", () => {
   const result = matchRoute("GET", ["api", "rooms", "room-456", "stream"], routes.streamRoom);
   expect(result).toEqual({ roomId: "room-456" });
+});
+
+it("matches roomWs route with parameter", () => {
+  const result = matchRoute("GET", ["api", "rooms", "room-999", "ws"], routes.roomWs);
+  expect(result).toEqual({ roomId: "room-999" });
 });
 
 it("matches uploadAudio route with parameter", () => {

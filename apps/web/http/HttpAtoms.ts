@@ -27,6 +27,7 @@ import {
   type SubmitTurnResult,
   type UploadAudioResult
 } from "@ensayo/shared";
+import { cacheRoomStreamUrl } from "../eventlog/RoomStreamUrl";
 
 // =============================================================================
 // HTTP Runtime (provides FetchHttpClient layer)
@@ -78,6 +79,7 @@ export const createRoomFn = httpRuntime.fn<CreateRoomInput>()(
 
     const response = yield* client.execute(request);
     const data = yield* HttpClientResponse.schemaBodyJson(CreateRoomResponse)(response);
+    cacheRoomStreamUrl(data.roomId, data.wsUrl);
 
     // Update URL param - dispatch pushstate event for Atom.searchParam to detect
     const url = new URL(window.location.href);

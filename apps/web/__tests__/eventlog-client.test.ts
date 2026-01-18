@@ -4,8 +4,8 @@ import * as Redacted from "effect/Redacted";
 import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
 import { Entry, makeEntryId } from "@effect/experimental/EventJournal";
 import { payloadEncoders, type RoomEvent } from "../../shared/src/RoomProtocol";
+import { buildRoomStreamUrl } from "../eventlog/RoomStreamUrl";
 import {
-  buildRoomStreamUrl,
   decodeRoomEventEntry,
   makeRoomIdentity,
   roomEventStreamFromEntries,

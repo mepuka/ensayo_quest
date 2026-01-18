@@ -1,4 +1,4 @@
-import { Effect, Layer, Stream, SubscriptionRef, Scope } from "effect";
+import { Effect, Layer, Stream, SubscriptionRef } from "effect";
 import * as Redacted from "effect/Redacted";
 import * as EventLog from "@effect/experimental/EventLog";
 import * as EventLogEncryption from "@effect/experimental/EventLogEncryption";
@@ -6,6 +6,7 @@ import * as EventLogRemote from "@effect/experimental/EventLogRemote";
 import * as EventJournal from "@effect/experimental/EventJournal";
 import * as Socket from "@effect/platform/Socket";
 import { decodeJournalEntry, type RoomEvent } from "../../shared/src/RoomProtocol";
+import { cacheRoomStreamUrl, resolveRoomStreamUrl } from "./RoomStreamUrl";
 
 // =============================================================================
 // Connection Status Types
@@ -38,26 +39,6 @@ export const makeRoomIdentity = Effect.fn(function* (roomId: string) {
     privateKey: Redacted.make(key)
   });
 });
-
-export const buildRoomStreamUrl = (baseUrl: string, roomId: string) => {
-  const url = new URL(baseUrl);
-  const protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${url.host}/api/rooms/${roomId}/stream`;
-};
-
-/**
- * Get WebSocket URL for a room.
- *
- * Uses VITE_WS_BASE_URL env var when set (required for Pages deployment
- * because Pages Functions cannot proxy WebSocket connections).
- * Falls back to window.location.href for local development.
- */
-export const getRoomStreamUrl = (roomId: string) => {
-  // In production/staging, VITE_WS_BASE_URL points to Workers API directly
-  const wsBaseUrl = import.meta.env.VITE_WS_BASE_URL as string | undefined;
-  const baseUrl = wsBaseUrl || window.location.href;
-  return buildRoomStreamUrl(baseUrl, roomId);
-};
 
 /**
  * Decode a journal entry into a RoomEvent.
@@ -93,7 +74,7 @@ const makeJournalLayer = (roomId: string) =>
     })
   );
 
-const makeRoomEventLayer = (roomId: string, url: string) => {
+const makeRoomEventLayer = (roomId: string) => {
   const identityLayer = Layer.effect(EventLog.Identity, makeRoomIdentity(roomId)).pipe(
     Layer.provideMerge(EventLogEncryption.layerSubtle)
   );
@@ -103,17 +84,23 @@ const makeRoomEventLayer = (roomId: string, url: string) => {
     identityLayer
   );
   const eventLogLayer = EventLog.layerEventLog.pipe(Layer.provideMerge(base));
-  return EventLogRemote.layerWebSocket(url).pipe(Layer.provideMerge(eventLogLayer));
+  const remoteLayer = Layer.scopedDiscard(
+    resolveRoomStreamUrl(roomId).pipe(Effect.flatMap((url) => EventLogRemote.fromWebSocket(url)))
+  );
+  return remoteLayer.pipe(Layer.provideMerge(eventLogLayer));
 };
 
-export const makeRoomEventStream = (options: { roomId: string; url: string }) =>
+export const makeRoomEventStream = (options: { roomId: string; url?: string }) =>
   Stream.unwrapScoped(
     Effect.gen(function* () {
+      if (options.url) {
+        cacheRoomStreamUrl(options.roomId, options.url);
+      }
       const journal = yield* EventJournal.EventJournal;
       const changes = yield* journal.changes;
       return roomEventStreamFromEntries(Stream.fromQueue(changes));
     })
-  ).pipe(Stream.provideLayer(makeRoomEventLayer(options.roomId, options.url)));
+  ).pipe(Stream.provideLayer(makeRoomEventLayer(options.roomId)));
 
 // =============================================================================
 // Connection Status Tracking
@@ -194,7 +181,6 @@ const makeTrackedWebSocketLayer = (
  */
 const makeTrackedRoomEventLayer = (
   roomId: string,
-  url: string,
   statusRef: SubscriptionRef.SubscriptionRef<ConnectionState>
 ) => {
   const identityLayer = Layer.effect(EventLog.Identity, makeRoomIdentity(roomId)).pipe(
@@ -206,7 +192,10 @@ const makeTrackedRoomEventLayer = (
     identityLayer
   );
   const eventLogLayer = EventLog.layerEventLog.pipe(Layer.provideMerge(base));
-  return EventLogRemote.layerWebSocket(url).pipe(Layer.provideMerge(eventLogLayer));
+  const remoteLayer = Layer.scopedDiscard(
+    resolveRoomStreamUrl(roomId).pipe(Effect.flatMap((resolvedUrl) => EventLogRemote.fromWebSocket(resolvedUrl)))
+  );
+  return remoteLayer.pipe(Layer.provideMerge(eventLogLayer));
 };
 
 /**
@@ -228,10 +217,13 @@ export type RoomEventStreamWithStatus = {
  */
 export const makeRoomEventStreamWithStatus = Effect.fn(function* (options: {
   roomId: string;
-  url: string;
+  url?: string;
 }) {
   // Create a subscription ref to track connection status
   const statusRef = yield* SubscriptionRef.make(initialConnectionState);
+  if (options.url) {
+    cacheRoomStreamUrl(options.roomId, options.url);
+  }
 
   // Create the event stream with tracked WebSocket
   const events = Stream.unwrapScoped(
@@ -241,7 +233,7 @@ export const makeRoomEventStreamWithStatus = Effect.fn(function* (options: {
       return roomEventStreamFromEntries(Stream.fromQueue(changes));
     })
   ).pipe(
-    Stream.provideLayer(makeTrackedRoomEventLayer(options.roomId, options.url, statusRef))
+    Stream.provideLayer(makeTrackedRoomEventLayer(options.roomId, statusRef))
   );
 
   // Create a stream from the status ref changes (instance property)
@@ -285,8 +277,7 @@ export const getOrCreateRoomConnection = (roomId: string): RoomConnection => {
 
   // Create status ref synchronously (it's just an in-memory ref)
   const statusRef = Effect.runSync(SubscriptionRef.make(initialConnectionState));
-  const url = getRoomStreamUrl(roomId);
-  const layer = makeTrackedRoomEventLayer(roomId, url, statusRef);
+  const layer = makeTrackedRoomEventLayer(roomId, statusRef);
 
   const connection: RoomConnection = { roomId, statusRef, layer };
   roomConnections.set(roomId, connection);
