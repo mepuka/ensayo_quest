@@ -64,6 +64,7 @@ export class ScoringError extends Schema.TaggedError<ScoringError>()("ScoringErr
 
 export interface ScoringServiceApi {
   evaluate: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
+  evaluatePartial: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
 }
 
 export class ScoringService extends Context.Tag("ScoringService")<
@@ -78,10 +79,41 @@ const scoreOverall = (weights: ScoringWeights, scores: ScoringWeights): number =
       weights.naturalness * scores.naturalness
   );
 
+const scorePartialOverall = (weights: ScoringWeights, scores: ScoringWeights): number => {
+  const total = weights.fluency + weights.vocab;
+  if (total <= 0) {
+    return 0;
+  }
+  return Math.round(
+    (weights.fluency / total) * scores.fluency +
+      (weights.vocab / total) * scores.vocab
+  );
+};
+
 export const ScoringServiceLive = Layer.effect(
   ScoringService,
   Effect.gen(function* () {
     const config = yield* ScoringConfig;
+    const evaluatePartial = Effect.fn("ScoringService.evaluatePartial")(function* (
+      input: TurnScoringInput
+    ) {
+      const scores = {
+        fluency: scoreFluency(input.audioStats, input.transcript),
+        vocab: scoreRoleVocab(input.transcript, input.targetVocab),
+        naturalness: 0
+      };
+      const overallScore = scorePartialOverall(config.weights, scores);
+      return new TurnEvaluation({
+        turnId: input.turnId,
+        scores,
+        overallScore,
+        feedback: [],
+        nextPrompt: "",
+        modelVersion: config.modelVersion,
+        confidence: 0
+      });
+    });
+
     const evaluate = Effect.fn("ScoringService.evaluate")(function* (input: TurnScoringInput) {
       const reviewer = yield* Effect.serviceOption(LanguageReview);
       const reviewInput = {
@@ -122,6 +154,6 @@ export const ScoringServiceLive = Layer.effect(
         confidence: reviewOutput ? reviewOutput.confidence : 0
       });
     });
-    return { evaluate };
+    return { evaluate, evaluatePartial };
   })
 );

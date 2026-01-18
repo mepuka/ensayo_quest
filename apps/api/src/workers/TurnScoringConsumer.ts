@@ -22,7 +22,10 @@ export class TurnScoringNonRetryableError extends Schema.TaggedError<TurnScoring
 export type TurnScoringError = TurnScoringRetryableError | TurnScoringNonRetryableError;
 
 export interface TurnScoringConsumerService {
-  handle: (payload: unknown) => Effect.Effect<void, TurnScoringError, never>;
+  handle: (
+    payload: unknown,
+    options?: { scoreAttemptId?: string }
+  ) => Effect.Effect<void, TurnScoringError, never>;
 }
 
 export class TurnScoringConsumer extends Context.Tag("TurnScoringConsumer")<
@@ -34,7 +37,10 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
   const db = yield* Db;
   const roomDo = yield* RoomDoClient;
   const scoring = yield* ScoringService;
-  const handle = Effect.fn("TurnScoringConsumer.handle")(function* (payload: unknown) {
+  const handle = Effect.fn("TurnScoringConsumer.handle")(function* (
+    payload: unknown,
+    options?: { scoreAttemptId?: string }
+  ) {
       // Decode errors are non-retryable - invalid payload won't become valid
       const job = yield* Effect.try({
         try: () => decodeQueueJob(payload),
@@ -78,8 +84,28 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
           return new TurnScoringRetryableError({ reason });
         })
       );
-      const scoreAttemptId = crypto.randomUUID();
+      const scoreAttemptId = options?.scoreAttemptId ?? audioUpload.requestId ?? crypto.randomUUID();
       const targetVocab = templateRecord.template.roleRubrics[0]?.targetVocab ?? [];
+      const partialEvaluation = yield* scoring.evaluatePartial({
+        turnId: submission.turnId,
+        transcript: submission.transcript,
+        audioStats: submission.audioStats,
+        targetVocab
+      }).pipe(
+        Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
+      );
+      yield* roomDo.emitRoomEvent(
+        job.roomId,
+        new ScoreUpdated({
+          type: "ScoreUpdated",
+          turnId: job.turnId,
+          status: "partial",
+          scoreAttemptId,
+          evaluation: partialEvaluation
+        })
+      ).pipe(
+        Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
+      );
       // Scoring service errors are typically retryable (external API issues)
       const evaluation = yield* scoring.evaluate({
         turnId: submission.turnId,

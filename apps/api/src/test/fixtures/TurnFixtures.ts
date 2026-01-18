@@ -197,7 +197,7 @@ export const TurnSubmissionFixtures = {
 const QueueJobDefaults: {
   roomId: string;
   turnId: string;
-  status: "partial" | "final";
+  status: "partial" | "ready" | "final";
 } = {
   roomId: "room-test",
   turnId: "turn-test",
@@ -210,16 +210,20 @@ export const QueueJobFixtures = {
   make: (overrides: Partial<typeof QueueJobDefaults> = {}) =>
     new QueueJob({ ...QueueJobDefaults, ...overrides }),
 
-  /** Final status - ready for scoring */
+  /** Ready status - audio uploaded, ready for scoring */
+  ready: (roomId: string, turnId: string) =>
+    QueueJobFixtures.make({ roomId, turnId, status: "ready" }),
+
+  /** Final status - scoring complete (rare for enqueue) */
   final: (roomId: string, turnId: string) =>
     QueueJobFixtures.make({ roomId, turnId, status: "final" }),
 
-  /** Partial status - audio not yet uploaded */
+  /** Partial status - audio not yet uploaded (legacy) */
   partial: (roomId: string, turnId: string) =>
     QueueJobFixtures.make({ roomId, turnId, status: "partial" }),
 
   /** Generate from TurnSubmission */
-  fromTurn: (turn: TurnSubmission, status: "partial" | "final" = "final") =>
+  fromTurn: (turn: TurnSubmission, status: "partial" | "ready" | "final" = "final") =>
     QueueJobFixtures.make({
       roomId: turn.roomId,
       turnId: turn.turnId,

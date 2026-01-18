@@ -9,8 +9,9 @@ import { TurnEvaluation } from "../../domain/RoomProtocol";
 
 it("scores turn and emits ScoreUpdated", async () => {
   let updated: unknown = null;
-  let emitted: Array<string> = [];
+  let emitted: Array<unknown> = [];
   let scoringInput: unknown = null;
+  let partialScoringInput: unknown = null;
   const evaluation = new TurnEvaluation({
     turnId: "t1",
     scores: {
@@ -23,6 +24,19 @@ it("scores turn and emits ScoreUpdated", async () => {
     nextPrompt: "Sigue",
     modelVersion: "test-model",
     confidence: 0.8
+  });
+  const partialEvaluation = new TurnEvaluation({
+    turnId: "t1",
+    scores: {
+      fluency: 80,
+      vocab: 20,
+      naturalness: 0
+    },
+    overallScore: 54,
+    feedback: [],
+    nextPrompt: "",
+    modelVersion: "test-model",
+    confidence: 0
   });
   const dbLayer = Layer.succeed(Db, {
     createRoom: () => Effect.void,
@@ -99,12 +113,17 @@ it("scores turn and emits ScoreUpdated", async () => {
       Effect.sync(() => {
         scoringInput = input;
         return evaluation;
+      }),
+    evaluatePartial: (input) =>
+      Effect.sync(() => {
+        partialScoringInput = input;
+        return partialEvaluation;
       })
   });
   const doLayer = Layer.succeed(RoomDoClient, {
     emitRoomEvent: (_roomId, event) =>
       Effect.sync(() => {
-        emitted.push(event.type);
+        emitted.push(event);
       })
   });
   const consumer = await Effect.runPromise(
@@ -133,7 +152,15 @@ it("scores turn and emits ScoreUpdated", async () => {
     audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] },
     targetVocab: ["adios"]
   });
-  expect(emitted).toEqual(["ScoreUpdated"]);
+  expect(partialScoringInput).toEqual(scoringInput);
+  expect(emitted).toHaveLength(2);
+  expect((emitted[0] as { status: string }).status).toBe("partial");
+  expect((emitted[1] as { status: string }).status).toBe("final");
+  expect((emitted[0] as { scoreAttemptId: string }).scoreAttemptId)
+    .toBe((emitted[1] as { scoreAttemptId: string }).scoreAttemptId);
+  expect((emitted[0] as { evaluation: { feedback: string[] } }).evaluation.feedback).toEqual([]);
+  expect((emitted[0] as { evaluation: { scores: { naturalness: number } } }).evaluation.scores.naturalness)
+    .toBe(0);
 });
 
 it("skips scoring when AudioUploaded not found (defense in depth)", async () => {
@@ -213,6 +240,19 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
           nextPrompt: "",
           modelVersion: "test",
           confidence: 0.8
+        });
+      }),
+    evaluatePartial: () =>
+      Effect.sync(() => {
+        scoringCalled = true;
+        return new TurnEvaluation({
+          turnId: "t1",
+          scores: { fluency: 80, vocab: 20, naturalness: 0 },
+          overallScore: 54,
+          feedback: [],
+          nextPrompt: "",
+          modelVersion: "test",
+          confidence: 0
         });
       })
   });

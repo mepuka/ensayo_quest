@@ -228,10 +228,12 @@ describe("TurnScoringConsumer Integration (mock mode)", () => {
     // Verify next prompt from mock
     expect(evaluation.nextPrompt).toContain("Good work!");
 
-    // Verify event was emitted
-    expect(emittedEvents).toHaveLength(1);
+    // Verify partial + final events were emitted
+    expect(emittedEvents).toHaveLength(2);
     expect(emittedEvents[0]!.roomId).toBe("room-integration-test");
     expect((emittedEvents[0]!.event as { type: string }).type).toBe("ScoreUpdated");
+    expect((emittedEvents[0]!.event as { status: string }).status).toBe("partial");
+    expect((emittedEvents[1]!.event as { status: string }).status).toBe("final");
   });
 
   it("falls back gracefully when LanguageReview is disabled", async () => {
@@ -294,8 +296,8 @@ describe("TurnScoringConsumer Integration (mock mode)", () => {
     // Empty next prompt
     expect(evaluation.nextPrompt).toBe("");
 
-    // Event still emitted
-    expect(emittedEvents).toHaveLength(1);
+    // Partial + final events still emitted
+    expect(emittedEvents).toHaveLength(2);
   });
 
   it("fluency and vocab scores are computed locally (not from mock)", async () => {

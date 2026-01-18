@@ -61,4 +61,11 @@ it("validates turn scoring queue job payloads", () => {
   });
   expect(job).toBeInstanceOf(QueueJob);
   expect(job.status).toBe("final");
+
+  const readyJob = Schema.decodeUnknownSync(QueueJob)({
+    roomId: "r2",
+    turnId: "t2",
+    status: "ready"
+  });
+  expect(readyJob.status).toBe("ready");
 });

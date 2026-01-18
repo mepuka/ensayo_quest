@@ -13,7 +13,11 @@
  * ```
  */
 import { Effect, Layer } from "effect";
-import { ScoringService, type TurnScoringInput } from "../../services/ScoringService";
+import {
+  ScoringService,
+  type TurnScoringInput,
+  defaultScoringConfig
+} from "../../services/ScoringService";
 import { TurnEvaluation } from "../../domain/RoomProtocol";
 
 // =============================================================================
@@ -39,6 +43,8 @@ export interface ScoringTestConfig {
   confidence?: number;
   /** Callback when evaluate is called */
   onEvaluate?: (input: TurnScoringInput) => void;
+  /** Callback when evaluatePartial is called */
+  onEvaluatePartial?: (input: TurnScoringInput) => void;
 }
 
 // =============================================================================
@@ -56,7 +62,8 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
     nextPrompt = "Mock next prompt",
     modelVersion = "mock-v1",
     confidence = 0.85,
-    onEvaluate
+    onEvaluate,
+    onEvaluatePartial
   } = config;
 
   // Derive individual scores from overall if not provided
@@ -65,6 +72,16 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
     vocab: mockScore - 5,
     naturalness: mockScore - 3
   };
+
+  const partialWeights = defaultScoringConfig.weights;
+  const partialWeightSum = partialWeights.fluency + partialWeights.vocab;
+  const partialOverall =
+    partialWeightSum <= 0
+      ? 0
+      : Math.round(
+          (partialWeights.fluency / partialWeightSum) * scores.fluency +
+            (partialWeights.vocab / partialWeightSum) * scores.vocab
+        );
 
   return Layer.succeed(ScoringService, {
     evaluate: (input: TurnScoringInput) =>
@@ -80,6 +97,24 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
           nextPrompt,
           modelVersion,
           confidence
+        });
+      }),
+    evaluatePartial: (input: TurnScoringInput) =>
+      Effect.sync(() => {
+        onEvaluatePartial?.(input);
+
+        return new TurnEvaluation({
+          turnId: input.turnId,
+          scores: {
+            fluency: scores.fluency,
+            vocab: scores.vocab,
+            naturalness: 0
+          },
+          overallScore: partialOverall,
+          feedback: [],
+          nextPrompt: "",
+          modelVersion,
+          confidence: 0
         });
       })
   });

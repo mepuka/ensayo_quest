@@ -32,11 +32,13 @@ describe("TurnScoringConsumer with Test Layers", () => {
   let dbState: DbTestState;
   let emittedEvents: Array<{ roomId: string; event: RoomEvent }>;
   let evaluatedInputs: Array<TurnScoringInput>;
+  let evaluatedPartialInputs: Array<TurnScoringInput>;
 
   beforeEach(() => {
     dbState = makeDbTestState();
     emittedEvents = [];
     evaluatedInputs = [];
+    evaluatedPartialInputs = [];
   });
 
   /**
@@ -180,7 +182,8 @@ describe("TurnScoringConsumer with Test Layers", () => {
 
     const scoringLayer = makeScoringTestLayer({
       mockScore: 75,
-      onEvaluate: (input) => evaluatedInputs.push(input)
+      onEvaluate: (input) => evaluatedInputs.push(input),
+      onEvaluatePartial: (input) => evaluatedPartialInputs.push(input)
     });
 
     const roomDoLayer = makeRoomDoTestLayer({
@@ -215,15 +218,20 @@ describe("TurnScoringConsumer with Test Layers", () => {
     expect(evaluation.modelVersion).toBe("mock-v1");
     expect(evaluation.turnId).toBe(turnId);
 
-    // Verify ScoringService.evaluate was called
+    // Verify ScoringService was called for partial + final
+    expect(evaluatedPartialInputs).toHaveLength(1);
     expect(evaluatedInputs).toHaveLength(1);
     expect(evaluatedInputs[0]!.turnId).toBe(turnId);
     expect(evaluatedInputs[0]!.transcript).toBe("Hola, quiero un billete de ida a Madrid.");
+    expect(evaluatedPartialInputs[0]!.turnId).toBe(turnId);
+    expect(evaluatedPartialInputs[0]!.transcript).toBe("Hola, quiero un billete de ida a Madrid.");
 
     // Verify ScoreUpdated event emitted
-    expect(emittedEvents).toHaveLength(1);
+    expect(emittedEvents).toHaveLength(2);
     expect(emittedEvents[0]!.roomId).toBe(roomId);
     expect(emittedEvents[0]!.event.type).toBe("ScoreUpdated");
+    expect((emittedEvents[0]!.event as { status: string }).status).toBe("partial");
+    expect((emittedEvents[1]!.event as { status: string }).status).toBe("final");
   });
 
   it("skips scoring when no audio upload exists (defense in depth)", async () => {
@@ -244,8 +252,9 @@ describe("TurnScoringConsumer with Test Layers", () => {
     // No score should be stored
     expect(dbState.scores.get(turnId)).toBeUndefined();
 
-    // ScoringService.evaluate should NOT have been called
+    // ScoringService should NOT have been called
     expect(evaluatedInputs).toHaveLength(0);
+    expect(evaluatedPartialInputs).toHaveLength(0);
 
     // No events should have been emitted
     expect(emittedEvents).toHaveLength(0);
@@ -272,11 +281,12 @@ describe("TurnScoringConsumer with Test Layers", () => {
     expect(score).toBeDefined();
     expect(score!.overall).toBe(75);
 
-    // Scoring was called twice (no dedup at this level)
+    // Scoring was called twice per run (no dedup at this level)
     expect(evaluatedInputs).toHaveLength(2);
+    expect(evaluatedPartialInputs).toHaveLength(2);
 
     // Two events emitted
-    expect(emittedEvents).toHaveLength(2);
+    expect(emittedEvents).toHaveLength(4);
   });
 
   it("fails with non-retryable error for invalid payload", async () => {

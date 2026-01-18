@@ -306,7 +306,7 @@ export default {
           }
 
           // Process the message
-          yield* consumer.handle(message.body);
+          yield* consumer.handle(message.body, { scoreAttemptId: message.id });
 
           // Mark as processed before ack (idempotency record)
           yield* db.markMessageProcessed(message.id).pipe(
