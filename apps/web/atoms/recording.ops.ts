@@ -183,6 +183,11 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
           }
 
           case "SpeechEnd": {
+            // NOTE: Safe to use Ref without synchronization because Stream.runForEach
+            // processes events sequentially. Only one SpeechEnd can be in-flight
+            // at a time within this fiber.
+            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+
             const durationMs = speechStartTime
               ? event.timestamp - speechStartTime
               : 0;
@@ -198,27 +203,31 @@ export const startRecordingFn = recordingRuntime.fn<void>()(
             // VAD outputs audio at 16kHz
             const sampleRate = 16000;
 
-            // Guard: Skip transcription for empty audio or invalid sample rate
+            // Generate requestId BEFORE any guards to ensure consistency
+            // This requestId is used for stale result detection
+            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
+            const requestId = crypto.randomUUID();
+            yield* Ref.set(latestRequestIdRef, requestId);
+
+            // Guard: Skip transcription for empty audio
+            // Note: sampleRate <= 0 check is defensive for future flexibility
+            // (currently hardcoded to 16000 but may become configurable)
             // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
             if (event.audio.length === 0 || sampleRate <= 0) {
               yield* Effect.logWarning("Skipping transcription - empty audio or invalid sample rate", {
                 audioLength: event.audio.length,
-                sampleRate
+                sampleRate,
+                requestId
               });
               yield* Atom.set(asrResultAtom, {
                 transcript: "",
-                requestId: crypto.randomUUID(),
+                requestId,
                 durationMs: 0,
                 sampleRate,
                 audio: event.audio
               });
               break;
             }
-
-            // Generate requestId BEFORE transcription to track this request
-            // @see docs/plans/2026-01-20-asr-worker-effect-hardening.md - Phase 3
-            const requestId = crypto.randomUUID();
-            yield* Ref.set(latestRequestIdRef, requestId);
 
             yield* Effect.logInfo("Transcribing audio", {
               samples: event.audio.length,
