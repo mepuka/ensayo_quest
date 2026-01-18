@@ -33,6 +33,24 @@ export class PreloadRequest extends Schema.Class<PreloadRequest>("PreloadRequest
 }) {}
 
 /**
+ * Progress event during model preloading.
+ * Emitted multiple times as model files are downloaded.
+ */
+export class PreloadProgress extends Schema.Class<PreloadProgress>("PreloadProgress")({
+  type: Schema.Literal("preload_progress"),
+  status: Schema.Union(
+    Schema.Literal("initiate"),
+    Schema.Literal("download"),
+    Schema.Literal("progress"),
+    Schema.Literal("done")
+  ),
+  file: Schema.optional(Schema.String),
+  progress: Schema.optional(Schema.Number),
+  loaded: Schema.optional(Schema.Number),
+  total: Schema.optional(Schema.Number)
+}) {}
+
+/**
  * Response after model preload completes.
  * Status indicates whether model was already loaded or newly loaded.
  */
@@ -50,7 +68,7 @@ export type WorkerError = {
   reason: string;
 };
 
-export type WorkerMessage = TranscribeResponse | PreloadResponse | WorkerReady | WorkerError;
+export type WorkerMessage = TranscribeResponse | PreloadProgress | PreloadResponse | WorkerReady | WorkerError;
 
 /**
  * Union type for all worker requests.
@@ -64,6 +82,8 @@ export const encodeTranscribeResponse = Schema.encodeSync(TranscribeResponse);
 
 export const decodePreloadRequest = Schema.decodeUnknownSync(PreloadRequest);
 export const encodePreloadRequest = Schema.encodeSync(PreloadRequest);
+export const decodePreloadProgress = Schema.decodeUnknownSync(PreloadProgress);
+export const encodePreloadProgress = Schema.encodeSync(PreloadProgress);
 export const decodePreloadResponse = Schema.decodeUnknownSync(PreloadResponse);
 export const encodePreloadResponse = Schema.encodeSync(PreloadResponse);
 

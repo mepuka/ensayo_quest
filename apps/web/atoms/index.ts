@@ -67,7 +67,7 @@ export {
 } from "./recording";
 
 // Recording operations
-export { preloadModelFn } from "./recording.ops";
+export { preloadModelFn, startRecordingFn, stopRecordingFn } from "./recording.ops";
 
 // Recording derived atoms
 export {

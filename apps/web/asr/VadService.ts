@@ -44,6 +44,7 @@ export type VadEvent =
 
 /**
  * VAD service configuration options.
+ * Extends vad-web MicVADOptions with typed config.
  */
 export interface VadServiceOptions {
   /**
@@ -63,6 +64,44 @@ export interface VadServiceOptions {
    * @default "legacy"
    */
   readonly model?: "v5" | "legacy";
+
+  // Frame processor options from vad-web
+  /**
+   * Speech probability threshold (0-1). Higher = stricter detection.
+   * @default 0.5
+   */
+  readonly positiveSpeechThreshold?: number;
+
+  /**
+   * Probability below which speech is considered ended.
+   * @default 0.35
+   */
+  readonly negativeSpeechThreshold?: number;
+
+  /**
+   * Time in ms to wait after speech ends before triggering SpeechEnd.
+   * Allows for pauses and hesitation.
+   * @default 500
+   */
+  readonly redemptionFrames?: number;
+
+  /**
+   * Padding in ms to add before detected speech start.
+   * @default 500
+   */
+  readonly preSpeechPadFrames?: number;
+
+  /**
+   * Minimum speech duration in ms to trigger a valid segment.
+   * @default 250
+   */
+  readonly minSpeechFrames?: number;
+
+  /**
+   * Submit speech on pause (vs only on explicit stop).
+   * @default true
+   */
+  readonly submitUserSpeechOnPause?: boolean;
 }
 
 export class VadConfig extends Context.Tag("VadConfig")<VadConfig, VadServiceOptions>() {}
@@ -130,7 +169,7 @@ const makeVadService = Effect.gen(function* () {
           catch: (cause) => new VadInitError({ reason: `Import failed: ${cause}` })
         });
 
-        // Build VAD instance with asset paths
+        // Build VAD instance with asset paths and frame processor options
         // MicVAD.new() handles:
         // - Microphone access via getUserMedia
         // - AudioWorklet setup
@@ -142,6 +181,14 @@ const makeVadService = Effect.gen(function* () {
               baseAssetPath: config.baseAssetPath ?? "/vad",
               onnxWASMBasePath: config.onnxWASMBasePath ?? "/vad/onnx",
               model: config.model ?? "legacy",
+
+              // Frame processor options for language learner tuning
+              positiveSpeechThreshold: config.positiveSpeechThreshold ?? 0.5,
+              negativeSpeechThreshold: config.negativeSpeechThreshold ?? 0.35,
+              redemptionFrames: config.redemptionFrames ?? 8,
+              preSpeechPadFrames: config.preSpeechPadFrames ?? 1,
+              minSpeechFrames: config.minSpeechFrames ?? 3,
+              submitUserSpeechOnPause: config.submitUserSpeechOnPause ?? true,
 
               // Event callbacks - emit to Stream
               onSpeechStart: () => {

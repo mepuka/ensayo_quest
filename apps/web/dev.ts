@@ -1,5 +1,10 @@
 import index from "./index.html";
 import { resolveAsrShimPath } from "./asr/worker/workerBuild";
+import { join, resolve } from "node:path";
+import { readdir } from "node:fs/promises";
+
+const PUBLIC_VAD = resolve(import.meta.dirname, "public/vad");
+const PUBLIC_VAD_ONNX = join(PUBLIC_VAD, "onnx");
 
 const builtinShims = {
   fs: resolveAsrShimPath("fs"),
@@ -64,11 +69,35 @@ if (!workletOutput) {
   process.exit(1);
 }
 
+// Build VAD routes dynamically from public/vad directory
+const buildVadRoutes = async () => {
+  const routes: Record<string, Response | ReturnType<typeof Bun.file>> = {};
+
+  // VAD root files
+  const vadFiles = await readdir(PUBLIC_VAD);
+  for (const file of vadFiles) {
+    if (file === "onnx") continue; // Skip onnx subdirectory
+    routes[`/vad/${file}`] = Bun.file(join(PUBLIC_VAD, file));
+  }
+
+  // ONNX WASM files
+  const onnxFiles = await readdir(PUBLIC_VAD_ONNX);
+  for (const file of onnxFiles) {
+    routes[`/vad/onnx/${file}`] = Bun.file(join(PUBLIC_VAD_ONNX, file));
+  }
+
+  return routes;
+};
+
+const vadRoutes = await buildVadRoutes();
+console.log(`Serving ${Object.keys(vadRoutes).length} VAD assets`);
+
 Bun.serve({
   routes: {
     "/": index,
     "/asrWorker.js": Bun.file(workerOutput.path),
-    "/audioProcessor.js": Bun.file(workletOutput.path)
+    "/audioProcessor.js": Bun.file(workletOutput.path),
+    ...vadRoutes
   },
   development: {
     hmr: true,

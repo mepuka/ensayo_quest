@@ -17,6 +17,8 @@ import {
   micPermissionAtom,
   shouldAutoStopAtom,
   preloadModelFn,
+  startRecordingFn,
+  stopRecordingFn,
   type AppReadyState,
   type RecordingPhase,
   type AsrResult,
@@ -90,24 +92,24 @@ export function useRecording(): UseRecordingResult {
 
   // Operations
   const preload = useAtomSet(preloadModelFn);
+  const startVad = useAtomSet(startRecordingFn);
+  const stopVad = useAtomSet(stopRecordingFn);
   const setAsrResult = useAtomSet(asrResultAtom);
 
   // Track active recording for cleanup
   const isRecordingRef = useRef(false);
 
-  // Start recording - placeholder until VAD integration
+  // Start recording using VAD-based capture
   const startRecording = useCallback(() => {
     isRecordingRef.current = true;
-    // TODO: Trigger VAD start via atom
-    console.log("Recording started");
-  }, []);
+    startVad();
+  }, [startVad]);
 
-  // Stop recording - placeholder until VAD integration
+  // Stop recording
   const stopRecording = useCallback(() => {
     isRecordingRef.current = false;
-    // TODO: Trigger VAD stop via atom
-    console.log("Recording stopped");
-  }, []);
+    stopVad();
+  }, [stopVad]);
 
   // Cleanup on unmount - stop any active recording
   useEffect(() => {

@@ -27,6 +27,16 @@ export interface LocalAsrService {
    * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
    */
   preload: () => Effect.Effect<{ status: "loaded" | "already_loaded" }, Error, never>;
+  /**
+   * Transcribe audio directly (for VAD-captured audio).
+   * Use this when audio is captured externally (e.g., by MicVAD).
+   *
+   * @param audio - Float32Array of audio samples
+   * @param sampleRate - Sample rate of the audio (typically 16000 for VAD)
+   *
+   * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
+   */
+  transcribe: (audio: Float32Array, sampleRate: number) => Effect.Effect<{ transcript: string }, Error, never>;
 }
 
 export class LocalAsr extends Context.Tag("LocalAsr")<LocalAsr, LocalAsrService>() {}
@@ -119,7 +129,19 @@ export const makeLocalAsr = Effect.gen(function* () {
     return { status: response.status };
   }, Effect.mapError((cause) => new Error(String(cause))));
 
-  return { start, stop, preload };
+  /**
+   * Transcribe audio directly (for VAD-captured audio).
+   * Sends audio to the ASR worker without using WorkletCapture.
+   *
+   * @see ensayo_quest-og3: Phase 3 - VAD → ASR Integration
+   */
+  const transcribe = (audio: Float32Array, sampleRate: number) =>
+    Effect.fn(function* () {
+      const response = yield* client.transcribe(audio, sampleRate);
+      return { transcript: response.transcript };
+    }, Effect.mapError((cause) => new Error(String(cause))))();
+
+  return { start, stop, preload, transcribe };
 });
 
 // Layer.scoped ensures worker is cleaned up when the layer scope closes
