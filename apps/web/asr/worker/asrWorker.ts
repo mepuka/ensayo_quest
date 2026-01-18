@@ -1,22 +1,33 @@
-import { Effect } from "effect";
+/**
+ * ASR Worker - Whisper transcription worker using Effect WorkerRunner.layerSerialized
+ *
+ * This worker handles:
+ * - Model preloading with progress streaming (Preload -> Stream<PreloadEvent>)
+ * - Audio transcription (Transcribe -> Effect<TranscribeResult>)
+ *
+ * Uses single-flight pattern for model loading to prevent concurrent duplicate loads.
+ *
+ * @module
+ */
+import { Deferred, Effect, Either, FiberId, Ref, Stream } from "effect";
 import { WorkerRunner } from "@effect/platform";
 import { BrowserWorkerRunner } from "@effect/platform-browser";
 import { pipeline, env } from "@huggingface/transformers";
-// Legacy types from WorkerClient (which re-exports new protocol types)
+
 import {
-  decodeWorkerRequest,
-  encodeTranscribeResponse,
-  encodePreloadResponse,
-  PreloadRequest,
-  PreloadResponse,
+  ASRWorkerRequest,
   PreloadProgress,
-  TranscribeRequest,
-  TranscribeResponse,
-  type WorkerRequest
-} from "./WorkerClient";
-// Phase 1+ TaggedRequest protocol (for future migration)
-import type { ASRWorkerRequest, Preload, Transcribe } from "./protocol";
+  PreloadComplete,
+  TranscribeResult,
+  type Preload,
+  type Transcribe,
+  type PreloadEvent
+} from "./protocol";
 import { TranscriptionFailed } from "../errors";
+
+// -----------------------------------------------------------------------------
+// HuggingFace Transformers Configuration
+// -----------------------------------------------------------------------------
 
 // Configure HF Transformers environment for browser
 env.allowRemoteModels = true;
@@ -25,108 +36,259 @@ if (env.backends.onnx.wasm) {
   env.backends.onnx.wasm.wasmPaths = "/vad/onnx/";
 }
 
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+
 type TranscriberOutput = { text: string } | Array<{ text: string }>;
 type TranscriberFn = (
   audio: Float32Array | { audio: Float32Array; sampling_rate: number },
   options?: { language?: string; task?: string }
 ) => Promise<TranscriberOutput>;
 
-let transcriber: TranscriberFn | null = null;
+// -----------------------------------------------------------------------------
+// Single-Flight Model Loading State Machine
+// -----------------------------------------------------------------------------
 
-const ensureTranscriber = (onProgress?: (progress: PreloadProgress) => void) =>
+/**
+ * State machine for transcriber lifecycle.
+ * Ensures only one load attempt happens even with concurrent requests.
+ */
+type TranscriberState =
+  | { readonly _tag: "Idle" }
+  | { readonly _tag: "Loading"; readonly deferred: Deferred.Deferred<TranscriberFn, TranscriptionFailed> }
+  | { readonly _tag: "Ready"; readonly transcriber: TranscriberFn }
+  | { readonly _tag: "Failed"; readonly error: TranscriptionFailed };
+
+/**
+ * Global state ref for transcriber lifecycle.
+ * Uses unsafeMake since this is top-level module state in worker context.
+ */
+const transcriberRef = Ref.unsafeMake<TranscriberState>({ _tag: "Idle" });
+
+/**
+ * Progress callback type for model loading.
+ */
+type ProgressCallback = (progress: PreloadProgress) => void;
+
+/**
+ * Load the Whisper model pipeline.
+ * Internal function called by ensureTranscriber when state is Idle.
+ */
+const loadModel = (onProgress?: ProgressCallback) =>
   Effect.tryPromise({
     try: async () => {
-      if (!transcriber) {
-        onProgress?.(new PreloadProgress({ type: "preload_progress", status: "initiate" }));
+      onProgress?.(
+        new PreloadProgress({
+          _tag: "PreloadProgress",
+          status: "initiate"
+        })
+      );
 
-        const asrPipeline = await pipeline(
-          "automatic-speech-recognition",
-          "Xenova/whisper-base",
-          {
-            progress_callback: (info: { status: string; file?: string; progress?: number; loaded?: number; total?: number }) => {
-              const status = info.status as "initiate" | "download" | "progress" | "done";
-              onProgress?.(new PreloadProgress({
-                type: "preload_progress",
+      const asrPipeline = await pipeline(
+        "automatic-speech-recognition",
+        "Xenova/whisper-base",
+        {
+          progress_callback: (info: {
+            status: string;
+            file?: string;
+            progress?: number;
+            loaded?: number;
+            total?: number;
+          }) => {
+            const status = info.status as "initiate" | "download" | "progress" | "done";
+            onProgress?.(
+              new PreloadProgress({
+                _tag: "PreloadProgress",
                 status,
                 file: info.file,
                 progress: info.progress,
                 loaded: info.loaded,
                 total: info.total
-              }));
-            }
+              })
+            );
           }
-        );
-        transcriber = asrPipeline as TranscriberFn;
-      }
+        }
+      );
+      return asrPipeline as TranscriberFn;
     },
     catch: (cause) => new TranscriptionFailed({ reason: String(cause) })
   });
 
 /**
- * Handle transcription request.
- * Uses sampleRate from request to ensure correct transcription.
- */
-const transcribe = Effect.fn(function* (request: TranscribeRequest) {
-  yield* ensureTranscriber();
-  const result = yield* Effect.tryPromise({
-    try: () =>
-      transcriber!(
-        { audio: request.audio, sampling_rate: request.sampleRate },
-        { language: "spanish", task: "transcribe" }
-      ),
-    catch: (cause) => new TranscriptionFailed({ reason: String(cause) })
-  });
-  const transcript = Array.isArray(result) ? result[0]?.text ?? "" : result.text;
-  return new TranscribeResponse({ type: "result", transcript });
-});
-
-/**
- * Handle preload request - loads model without transcribing.
- * Returns status indicating whether model was newly loaded or already cached.
- * Logs progress events to console during model download.
+ * Ensure transcriber is loaded, with single-flight semantics.
  *
- * @see ensayo_quest-m3q: Add Whisper model preloading for better UX
+ * Uses Ref + Deferred pattern:
+ * - If Idle: Transitions to Loading, creates Deferred, loads model
+ * - If Loading: Waits on existing Deferred (joins in-flight load)
+ * - If Ready: Returns cached transcriber immediately
+ * - If Failed: Returns cached error immediately
+ *
+ * @param onProgress - Optional callback for progress events during initial load
  */
-const preload = Effect.fn(function* (_request: PreloadRequest) {
-  const wasAlreadyLoaded = transcriber !== null;
-  yield* ensureTranscriber((progress) => {
-    // Log progress for debugging - in future, emit via streaming
-    console.log("[ASR Worker] Preload progress:", progress.status, progress.file ?? "", progress.progress ?? "");
+const ensureTranscriber = (onProgress?: ProgressCallback) =>
+  Effect.gen(function* () {
+    // Atomically check state and transition to Loading if Idle
+    const action = yield* Ref.modify(transcriberRef, (state): [
+      | { readonly _tag: "AlreadyReady"; readonly transcriber: TranscriberFn }
+      | { readonly _tag: "AlreadyFailed"; readonly error: TranscriptionFailed }
+      | { readonly _tag: "Join"; readonly deferred: Deferred.Deferred<TranscriberFn, TranscriptionFailed> }
+      | { readonly _tag: "Load"; readonly deferred: Deferred.Deferred<TranscriberFn, TranscriptionFailed> },
+      TranscriberState
+    ] => {
+      switch (state._tag) {
+        case "Ready":
+          return [{ _tag: "AlreadyReady", transcriber: state.transcriber }, state];
+        case "Failed":
+          return [{ _tag: "AlreadyFailed", error: state.error }, state];
+        case "Loading":
+          return [{ _tag: "Join", deferred: state.deferred }, state];
+        case "Idle": {
+          // Create deferred synchronously for atomic transition
+          // Use FiberId.none since we're in a sync context (Ref.modify callback)
+          const deferred = Deferred.unsafeMake<TranscriberFn, TranscriptionFailed>(FiberId.none);
+          const newState: TranscriberState = { _tag: "Loading", deferred };
+          return [{ _tag: "Load", deferred }, newState];
+        }
+      }
+    });
+
+    switch (action._tag) {
+      case "AlreadyReady":
+        return action.transcriber;
+      case "AlreadyFailed":
+        return yield* Effect.fail(action.error);
+      case "Join":
+        // Wait for in-flight load to complete
+        return yield* Deferred.await(action.deferred);
+      case "Load": {
+        // We won the race - perform the actual load
+        const result = yield* loadModel(onProgress).pipe(Effect.either);
+
+        if (Either.isLeft(result)) {
+          // Load failed - transition to Failed state and fail the deferred
+          yield* Ref.set(transcriberRef, { _tag: "Failed", error: result.left });
+          yield* Deferred.fail(action.deferred, result.left);
+          return yield* Effect.fail(result.left);
+        }
+
+        // Load succeeded - transition to Ready state and complete the deferred
+        yield* Ref.set(transcriberRef, { _tag: "Ready", transcriber: result.right });
+        yield* Deferred.succeed(action.deferred, result.right);
+        return result.right;
+      }
+    }
   });
-  return new PreloadResponse({
-    type: "preload_complete",
-    status: wasAlreadyLoaded ? "already_loaded" : "loaded"
-  });
-});
+
+// -----------------------------------------------------------------------------
+// Request Handlers
+// -----------------------------------------------------------------------------
 
 /**
- * Main request handler - dispatches to transcribe or preload.
+ * Handle Preload request - streams progress events during model loading.
+ *
+ * Returns a Stream that emits:
+ * - PreloadProgress events during model download
+ * - PreloadComplete when loading finishes
  */
-const handleRequest = Effect.fn(function* (request: WorkerRequest) {
-  if (request.type === "preload") {
-    return yield* preload(request);
-  }
-  return yield* transcribe(request);
-});
+const handlePreload = (request: Preload): Stream.Stream<PreloadEvent, TranscriptionFailed> => {
+  // Check if already loaded before streaming
+  const checkAlreadyLoaded = Ref.get(transcriberRef).pipe(
+    Effect.map((state) => state._tag === "Ready")
+  );
 
-/**
- * Encode output based on response type.
- */
-const encodeOutput = (_request: WorkerRequest, output: TranscribeResponse | PreloadResponse) => {
-  if (output.type === "preload_complete") {
-    return Effect.succeed(encodePreloadResponse(output as PreloadResponse));
-  }
-  return Effect.succeed(encodeTranscribeResponse(output as TranscribeResponse));
+  return Stream.fromEffect(checkAlreadyLoaded).pipe(
+    Stream.flatMap((wasAlreadyLoaded) => {
+      if (wasAlreadyLoaded) {
+        // Already loaded - emit single complete event
+        return Stream.succeed<PreloadEvent>(
+          new PreloadComplete({
+            _tag: "PreloadComplete",
+            status: "already_loaded"
+          })
+        );
+      }
+
+      // Need to load - stream progress events
+      return Stream.async<PreloadEvent, TranscriptionFailed>((emit) => {
+        Effect.runPromise(
+          ensureTranscriber((progress) => {
+            // Emit progress events as they arrive
+            emit.single(progress);
+          }).pipe(
+            Effect.match({
+              onSuccess: () => {
+                emit.single(
+                  new PreloadComplete({
+                    _tag: "PreloadComplete",
+                    status: "loaded"
+                  })
+                );
+                emit.end();
+              },
+              onFailure: (error) => {
+                emit.fail(error);
+              }
+            })
+          )
+        );
+      });
+    })
+  );
 };
 
-const runnerLayer = WorkerRunner.layer(handleRequest, {
-  decode: (message) => Effect.succeed(decodeWorkerRequest(message)),
-  encodeOutput,
-  // Serialize error to plain object for postMessage compatibility
-  encodeError: (_request, error) => Effect.succeed({
-    _tag: "TranscriptionFailed",
-    reason: error instanceof TranscriptionFailed ? error.reason : String(error)
-  })
-});
+/**
+ * Handle Transcribe request - returns transcription result.
+ *
+ * Ensures model is loaded (joining in-flight load if needed),
+ * then transcribes the audio data.
+ */
+const handleTranscribe = (request: Transcribe) =>
+  Effect.gen(function* () {
+    const transcriber = yield* ensureTranscriber();
 
-Effect.runPromise(WorkerRunner.launch(runnerLayer).pipe(Effect.provide(BrowserWorkerRunner.layer)));
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        transcriber(
+          { audio: request.audio, sampling_rate: request.sampleRate },
+          { language: "spanish", task: "transcribe" }
+        ),
+      catch: (cause) => new TranscriptionFailed({ reason: String(cause) })
+    });
+
+    const transcript = Array.isArray(result) ? result[0]?.text ?? "" : result.text;
+
+    return new TranscribeResult({
+      _tag: "TranscribeResult",
+      transcript
+    });
+  });
+
+// -----------------------------------------------------------------------------
+// Worker Runner Layer
+// -----------------------------------------------------------------------------
+
+/**
+ * Worker layer using WorkerRunner.layerSerialized for automatic serialization.
+ *
+ * Handlers return:
+ * - Preload: Stream<PreloadEvent, TranscriptionFailed>
+ * - Transcribe: Effect<TranscribeResult, TranscriptionFailed>
+ */
+const runnerLayer = WorkerRunner.layerSerialized(ASRWorkerRequest, {
+  Preload: handlePreload,
+  Transcribe: handleTranscribe
+}).pipe(
+  // Provide the browser platform runner
+  // Layer.provide is not needed here - provide in launch
+);
+
+// -----------------------------------------------------------------------------
+// Launch Worker
+// -----------------------------------------------------------------------------
+
+Effect.runPromise(
+  WorkerRunner.launch(runnerLayer).pipe(
+    Effect.provide(BrowserWorkerRunner.layer)
+  )
+);
