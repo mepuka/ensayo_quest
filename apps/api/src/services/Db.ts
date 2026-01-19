@@ -11,6 +11,23 @@ export class DbError extends Schema.TaggedError<DbError>()("DbError", {
   reason: Schema.String
 }) {}
 
+export class TemplateVersionMismatch extends Schema.TaggedError<TemplateVersionMismatch>()(
+  "TemplateVersionMismatch",
+  {
+    templateId: Schema.String,
+    storedVersion: Schema.String,
+    computedVersion: Schema.String
+  }
+) {}
+
+export class TemplateVersionMissing extends Schema.TaggedError<TemplateVersionMissing>()(
+  "TemplateVersionMissing",
+  {
+    templateId: Schema.String,
+    computedVersion: Schema.String
+  }
+) {}
+
 export type ScenarioTemplateRecord = {
   template: ScenarioTemplate;
   templateVersion: string;
@@ -21,9 +38,20 @@ export interface DbService {
   insertTurn: (submission: TurnSubmission) => Effect.Effect<void, DbError, never>;
   getRoomTemplateId: (roomId: string) => Effect.Effect<string, DbError, never>;
   getNextTurnIndex: (roomId: string) => Effect.Effect<number, DbError, never>;
-  findScenarioTemplate: (input: { topic: string; level: string }) => Effect.Effect<ScenarioTemplateRecord, DbError, never>;
+  findScenarioTemplate: (input: {
+    topic: string;
+    level: string;
+  }) => Effect.Effect<
+    ScenarioTemplateRecord,
+    DbError | TemplateVersionMismatch | TemplateVersionMissing,
+    never
+  >;
   getTurnSubmission: (turnId: string) => Effect.Effect<TurnSubmission, DbError, never>;
-  getScenarioTemplate: (templateId: string) => Effect.Effect<ScenarioTemplateRecord, DbError, never>;
+  getScenarioTemplate: (templateId: string) => Effect.Effect<
+    ScenarioTemplateRecord,
+    DbError | TemplateVersionMismatch | TemplateVersionMissing,
+    never
+  >;
   updateTurnAudioKey: (input: { turnId: string; audioKey: string }) => Effect.Effect<void, DbError, never>;
   updateTurnScore: (input: {
     turnId: string;
@@ -97,24 +125,26 @@ export const DbLive = Layer.effect(
       const normalizedStored = storedVersion.trim();
       return hashSha256(canonicalJson).pipe(
         Effect.mapError((cause) => new DbError({ reason: String(cause) })),
-        Effect.tap((computed) => {
+        Effect.flatMap((computed) => {
           if (normalizedStored.length === 0) {
-            return Effect.logWarning("template_version_missing", {
-              templateId: template.templateId
-            });
+            return Effect.fail(
+              new TemplateVersionMissing({
+                templateId: template.templateId,
+                computedVersion: computed
+              })
+            );
           }
           if (normalizedStored !== computed) {
-            return Effect.logWarning("template_version_mismatch", {
-              templateId: template.templateId,
-              storedVersion: normalizedStored,
-              computedVersion: computed
-            });
+            return Effect.fail(
+              new TemplateVersionMismatch({
+                templateId: template.templateId,
+                storedVersion: normalizedStored,
+                computedVersion: computed
+              })
+            );
           }
-          return Effect.void;
-        }),
-        Effect.map((computed) =>
-          normalizedStored.length > 0 ? normalizedStored : computed
-        )
+          return Effect.succeed(normalizedStored);
+        })
       );
     };
     return {

@@ -182,7 +182,7 @@ describe("TurnScoringConsumer with Test Layers", () => {
 
     const scoringLayer = makeScoringTestLayer({
       mockScore: 75,
-      onEvaluate: (input) => evaluatedInputs.push(input),
+      onEvaluateFinal: (input) => evaluatedInputs.push(input),
       onEvaluatePartial: (input) => evaluatedPartialInputs.push(input)
     });
 

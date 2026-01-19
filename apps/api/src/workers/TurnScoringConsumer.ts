@@ -1,10 +1,11 @@
 import { Context, Effect } from "effect";
+import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import { decodeQueueJob } from "../domain/QueueJob";
 import { Db } from "../services/Db";
 import { RoomDoClient } from "../services/RoomDoClient";
 import { ScoringService } from "../services/ScoringService";
-import { ScoreUpdated, TurnEvaluation } from "../domain/RoomProtocol";
+import { ScoreUpdated, RoomError, TurnEvaluation } from "../domain/RoomProtocol";
 
 // Retryable error: transient failures that should be retried (network, DB timeouts)
 export class TurnScoringRetryableError extends Schema.TaggedError<TurnScoringRetryableError>()(
@@ -41,6 +42,7 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
     payload: unknown,
     options?: { scoreAttemptId?: string }
   ) {
+    const run = Effect.gen(function* () {
       // Decode errors are non-retryable - invalid payload won't become valid
       const job = yield* Effect.try({
         try: () => decodeQueueJob(payload),
@@ -76,27 +78,66 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
         })
       );
       const templateRecord = yield* db.getScenarioTemplate(submission.templateId).pipe(
-        Effect.mapError((cause) => {
-          const reason = String(cause);
+        Effect.catchTags({
+          TemplateVersionMismatch: (error) =>
+            roomDo.emitRoomEvent(
+              job.roomId,
+              new RoomError({
+                type: "Error",
+                code: "template_version_mismatch",
+                message: `Template ${error.templateId} version mismatch`,
+                retryable: false
+              })
+            ).pipe(
+              Effect.andThen(
+                Effect.fail(new TurnScoringNonRetryableError({ reason: "template_version_mismatch" }))
+              )
+            ),
+          TemplateVersionMissing: (error) =>
+            roomDo.emitRoomEvent(
+              job.roomId,
+              new RoomError({
+                type: "Error",
+                code: "template_version_missing",
+                message: `Template ${error.templateId} version missing`,
+                retryable: false
+              })
+            ).pipe(
+              Effect.andThen(
+                Effect.fail(new TurnScoringNonRetryableError({ reason: "template_version_missing" }))
+              )
+            )
+        }),
+        Effect.catchTag("DbError", (cause) => {
+          const reason = String(cause.reason);
           if (reason.includes("not_found")) {
-            return new TurnScoringNonRetryableError({ reason });
+            return Effect.fail(new TurnScoringNonRetryableError({ reason }));
           }
-          return new TurnScoringRetryableError({ reason });
+          return Effect.fail(new TurnScoringRetryableError({ reason }));
         })
       );
       const scoreAttemptId = options?.scoreAttemptId ?? audioUpload.requestId ?? crypto.randomUUID();
       const scoringStartedAt = Date.now();
       const targetVocab = templateRecord.template.roleRubrics[0]?.targetVocab ?? [];
-      const partialStartedAt = Date.now();
-      const partialEvaluation = yield* scoring.evaluatePartial({
+      const targetGrammar = templateRecord.template.roleRubrics[0]?.targetGrammar ?? [];
+      yield* Effect.annotateLogsScoped({
+        roomId: job.roomId,
+        turnId: job.turnId,
+        scoreAttemptId
+      });
+
+      const [partialDuration, partialEvaluation] = yield* scoring.evaluatePartial({
         turnId: submission.turnId,
         transcript: submission.transcript,
         audioStats: submission.audioStats,
-        targetVocab
+        targetVocab,
+        targetGrammar
       }).pipe(
+        Effect.withSpan("scoring.partial"),
+        Effect.timed,
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
-      const partialEvalMs = Date.now() - partialStartedAt;
+      const partialEvalMs = Duration.toMillis(partialDuration);
       yield* roomDo.emitRoomEvent(
         job.roomId,
         new ScoreUpdated({
@@ -111,16 +152,18 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
       );
       const partialEmittedAt = Date.now();
       // Scoring service errors are typically retryable (external API issues)
-      const finalStartedAt = Date.now();
-      const evaluation = yield* scoring.evaluate({
+      const [finalDuration, evaluation] = yield* scoring.evaluateFinalWithFallback({
         turnId: submission.turnId,
         transcript: submission.transcript,
         audioStats: submission.audioStats,
-        targetVocab
+        targetVocab,
+        targetGrammar
       }).pipe(
+        Effect.withSpan("scoring.final"),
+        Effect.timed,
         Effect.mapError((cause) => new TurnScoringRetryableError({ reason: String(cause) }))
       );
-      const finalEvalMs = Date.now() - finalStartedAt;
+      const finalEvalMs = Duration.toMillis(finalDuration);
       // Schema encoding errors are non-retryable - bad data structure
       const detailJson = yield* Effect.try({
         try: () => Schema.encodeSync(Schema.parseJson(TurnEvaluation))(evaluation),
@@ -164,6 +207,9 @@ export const makeTurnScoringConsumer = Effect.gen(function* () {
         totalMs: finalEmittedAt - scoringStartedAt
       });
     });
+
+    return yield* run.pipe(Effect.scoped);
+  });
 
   return { handle };
 });

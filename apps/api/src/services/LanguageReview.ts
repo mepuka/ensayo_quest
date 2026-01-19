@@ -54,6 +54,7 @@ export const LanguageReviewInput = Schema.Struct({
     })
   ),
   targetVocab: Schema.optional(Schema.Array(Schema.String)),
+  targetGrammar: Schema.optional(Schema.Array(Schema.String)),
   objectives: Schema.optional(
     Schema.Array(
       Schema.Struct({
@@ -148,6 +149,9 @@ const buildUserPrompt = (input: LanguageReviewInput, config: LanguageReviewConfi
   }
   if (input.targetVocab && input.targetVocab.length > 0) {
     sections.push(`Target vocab: ${input.targetVocab.join(", ")}`);
+  }
+  if (input.targetGrammar && input.targetGrammar.length > 0) {
+    sections.push(`Target grammar: ${input.targetGrammar.join(", ")}`);
   }
   if (input.objectives && input.objectives.length > 0) {
     const objectiveLines = input.objectives.map(

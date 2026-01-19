@@ -8,7 +8,7 @@
  * const evaluatedInputs: TurnScoringInput[] = [];
  * const layer = makeScoringTestLayer({
  *   mockScore: 85,
- *   onEvaluate: (input) => evaluatedInputs.push(input)
+ *   onEvaluateFinal: (input) => evaluatedInputs.push(input)
  * });
  * ```
  */
@@ -41,8 +41,8 @@ export interface ScoringTestConfig {
   modelVersion?: string;
   /** Confidence value (0-1) */
   confidence?: number;
-  /** Callback when evaluate is called */
-  onEvaluate?: (input: TurnScoringInput) => void;
+  /** Callback when evaluateFinalWithFallback is called */
+  onEvaluateFinal?: (input: TurnScoringInput) => void;
   /** Callback when evaluatePartial is called */
   onEvaluatePartial?: (input: TurnScoringInput) => void;
 }
@@ -62,7 +62,7 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
     nextPrompt = "Mock next prompt",
     modelVersion = "mock-v1",
     confidence = 0.85,
-    onEvaluate,
+    onEvaluateFinal,
     onEvaluatePartial
   } = config;
 
@@ -84,10 +84,10 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
         );
 
   return Layer.succeed(ScoringService, {
-    evaluate: (input: TurnScoringInput) =>
+    evaluateFinalWithFallback: (input: TurnScoringInput) =>
       Effect.sync(() => {
         // Call hook if provided
-        onEvaluate?.(input);
+        onEvaluateFinal?.(input);
 
         return new TurnEvaluation({
           turnId: input.turnId,
@@ -96,7 +96,8 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
           feedback,
           nextPrompt,
           modelVersion,
-          confidence
+          confidence,
+          degraded: false
         });
       }),
     evaluatePartial: (input: TurnScoringInput) =>
@@ -114,7 +115,8 @@ export const makeScoringTestLayer = (config: ScoringTestConfig = {}) => {
           feedback: [],
           nextPrompt: "",
           modelVersion,
-          confidence: 0
+          confidence: 0,
+          degraded: false
         });
       })
   });

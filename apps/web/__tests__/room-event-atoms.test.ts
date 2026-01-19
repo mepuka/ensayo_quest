@@ -20,7 +20,8 @@ describe("roomStateStreamFromEvents", () => {
           feedback: ["Good flow"],
           nextPrompt: "Continue the conversation.",
           modelVersion: "test-model",
-          confidence: 0.9
+          confidence: 0.9,
+          degraded: false
         }
       }
     ];
@@ -59,7 +60,8 @@ describe("roomStateStreamFromEvents", () => {
           feedback: ["Good flow"],
           nextPrompt: "Continue the conversation.",
           modelVersion: "test-model",
-          confidence: 0.9
+          confidence: 0.9,
+          degraded: false
         }
       },
       { type: "RoomCompleted", summary: "Session complete" }

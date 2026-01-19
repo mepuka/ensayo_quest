@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Schedule } from "effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { TurnEvaluation } from "../domain/RoomProtocol";
@@ -53,7 +53,16 @@ export const TurnScoringInput = Schema.Struct({
   turnId: Schema.String,
   transcript: Schema.String,
   audioStats: AudioStatsSchema,
-  targetVocab: Schema.Array(Schema.String)
+  targetVocab: Schema.Array(Schema.String),
+  targetGrammar: Schema.Array(Schema.String),
+  objectives: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        description: Schema.String
+      })
+    )
+  )
 });
 
 export type TurnScoringInput = Schema.Schema.Type<typeof TurnScoringInput>;
@@ -62,8 +71,16 @@ export class ScoringError extends Schema.TaggedError<ScoringError>()("ScoringErr
   reason: Schema.String
 }) {}
 
+class LanguageReviewFailure extends Schema.TaggedError<LanguageReviewFailure>()(
+  "LanguageReviewFailure",
+  {
+    failure: Schema.Literal("timeout", "failed"),
+    reason: Schema.String
+  }
+) {}
+
 export interface ScoringServiceApi {
-  evaluate: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
+  evaluateFinalWithFallback: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
   evaluatePartial: (input: TurnScoringInput) => Effect.Effect<TurnEvaluation, ScoringError, never>;
 }
 
@@ -110,11 +127,14 @@ export const ScoringServiceLive = Layer.effect(
         feedback: [],
         nextPrompt: "",
         modelVersion: config.modelVersion,
-        confidence: 0
+        confidence: 0,
+        degraded: false
       });
     });
 
-    const evaluate = Effect.fn("ScoringService.evaluate")(function* (input: TurnScoringInput) {
+    const evaluateFinalWithFallback = Effect.fn("ScoringService.evaluateFinalWithFallback")(function* (
+      input: TurnScoringInput
+    ) {
       const reviewer = yield* Effect.serviceOption(LanguageReview);
       const reviewInput = {
         mode: "spoken" as const,
@@ -125,35 +145,91 @@ export const ScoringServiceLive = Layer.effect(
           pauseCount: input.audioStats.segments.length,
           speakingRateWpm: 0
         },
-        targetVocab: input.targetVocab
+        targetVocab: input.targetVocab,
+        targetGrammar: input.targetGrammar,
+        objectives: input.objectives
       };
-      const reviewResult = yield* Option.match(reviewer, {
-        onNone: () => Effect.succeed(Option.none()),
+
+      const reviewEffect = Option.match(reviewer, {
+        onNone: () =>
+          Effect.fail(
+            new LanguageReviewFailure({
+              failure: "failed",
+              reason: "language_review_unavailable"
+            })
+          ),
         onSome: (service) =>
           service.review(reviewInput).pipe(
-            Effect.map(Option.some),
-            Effect.catchAll(() => Effect.succeed(Option.none()))
+            Effect.timeoutFail({
+              duration: "2 seconds",
+              onTimeout: () =>
+                new LanguageReviewFailure({
+                  failure: "timeout",
+                  reason: "language_review_timeout"
+                })
+            })
           )
-      });
-      const reviewOutput = Option.getOrUndefined(reviewResult);
-      const scores = {
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause && typeof cause === "object" && "_tag" in cause && cause._tag === "LanguageReviewFailure"
+            ? (cause as LanguageReviewFailure)
+            : new LanguageReviewFailure({ failure: "failed", reason: String(cause) })
+        )
+      );
+
+      const retrySchedule = Schedule.exponential("100 millis").pipe(
+        Schedule.compose(Schedule.recurs(3)),
+        Schedule.whileInput((error: LanguageReviewFailure) => error.failure !== "timeout")
+      );
+
+      const reviewResult = yield* Effect.either(
+        reviewEffect.pipe(
+          Effect.retry(retrySchedule),
+          Effect.withSpan("scoring.llm")
+        )
+      );
+      const localScores = {
         fluency: scoreFluency(input.audioStats, input.transcript),
         vocab: scoreRoleVocab(input.transcript, input.targetVocab),
-        naturalness: reviewOutput ? reviewOutput.subscores.naturalness : 0
+        naturalness: 0
       };
-      const overallScore = scoreOverall(config.weights, scores);
+
+      if (reviewResult._tag === "Right") {
+        const reviewOutput = reviewResult.right;
+        const scores = {
+          ...localScores,
+          naturalness: reviewOutput.subscores.naturalness
+        };
+        const overallScore = scoreOverall(config.weights, scores);
+        return new TurnEvaluation({
+          turnId: input.turnId,
+          scores,
+          overallScore,
+          feedback: [...reviewOutput.feedback.wins, ...reviewOutput.feedback.fixes],
+          nextPrompt: reviewOutput.nextPrompt,
+          modelVersion: reviewOutput.modelVersion,
+          confidence: reviewOutput.confidence,
+          degraded: false
+        });
+      }
+
+      const failure = reviewResult.left;
+      const overallScore = scorePartialOverall(config.weights, localScores);
       return new TurnEvaluation({
         turnId: input.turnId,
-        scores,
+        scores: localScores,
         overallScore,
-        feedback: reviewOutput
-          ? [...reviewOutput.feedback.wins, ...reviewOutput.feedback.fixes]
-          : [],
-        nextPrompt: reviewOutput ? reviewOutput.nextPrompt : "",
-        modelVersion: reviewOutput ? reviewOutput.modelVersion : config.modelVersion,
-        confidence: reviewOutput ? reviewOutput.confidence : 0
+        feedback: [],
+        nextPrompt: "",
+        modelVersion: config.modelVersion,
+        confidence: 0,
+        degraded: true,
+        degradedReason:
+          failure.failure === "timeout"
+            ? "language_review_timeout"
+            : "language_review_failed"
       });
     });
-    return { evaluate, evaluatePartial };
+    return { evaluateFinalWithFallback, evaluatePartial };
   })
 );

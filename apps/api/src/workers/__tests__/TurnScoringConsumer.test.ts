@@ -23,7 +23,8 @@ it("scores turn and emits ScoreUpdated", async () => {
     feedback: ["Buen trabajo"],
     nextPrompt: "Sigue",
     modelVersion: "test-model",
-    confidence: 0.8
+    confidence: 0.8,
+    degraded: false
   });
   const partialEvaluation = new TurnEvaluation({
     turnId: "t1",
@@ -36,7 +37,8 @@ it("scores turn and emits ScoreUpdated", async () => {
     feedback: [],
     nextPrompt: "",
     modelVersion: "test-model",
-    confidence: 0
+    confidence: 0,
+    degraded: false
   });
   const dbLayer = Layer.succeed(Db, {
     createRoom: () => Effect.void,
@@ -109,7 +111,7 @@ it("scores turn and emits ScoreUpdated", async () => {
     insertScenarioTemplate: () => Effect.void
   });
   const scoringLayer = Layer.succeed(ScoringService, {
-    evaluate: (input) =>
+    evaluateFinalWithFallback: (input) =>
       Effect.sync(() => {
         scoringInput = input;
         return evaluation;
@@ -150,7 +152,8 @@ it("scores turn and emits ScoreUpdated", async () => {
     turnId: "t1",
     transcript: "hola",
     audioStats: { totalMs: 1000, speechMs: 800, silenceMs: 200, segments: [] },
-    targetVocab: ["adios"]
+    targetVocab: ["adios"],
+    targetGrammar: []
   });
   expect(partialScoringInput).toEqual(scoringInput);
   expect(emitted).toHaveLength(2);
@@ -229,7 +232,7 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
   });
 
   const scoringLayer = Layer.succeed(ScoringService, {
-    evaluate: () =>
+    evaluateFinalWithFallback: () =>
       Effect.sync(() => {
         scoringCalled = true;
         return new TurnEvaluation({
@@ -239,7 +242,8 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
           feedback: [],
           nextPrompt: "",
           modelVersion: "test",
-          confidence: 0.8
+          confidence: 0.8,
+          degraded: false
         });
       }),
     evaluatePartial: () =>
@@ -252,7 +256,8 @@ it("skips scoring when AudioUploaded not found (defense in depth)", async () => 
           feedback: [],
           nextPrompt: "",
           modelVersion: "test",
-          confidence: 0
+          confidence: 0,
+          degraded: false
         });
       })
   });

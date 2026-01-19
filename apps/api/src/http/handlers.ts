@@ -2,12 +2,12 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import { TurnSubmission } from "../domain/TurnSubmission";
 import { decodeHttpTurnSubmission } from "../domain/HttpProtocol";
-import { Db } from "../services/Db";
+import { Db, TemplateVersionMismatch, TemplateVersionMissing } from "../services/Db";
 import { AudioBucket } from "../services/CloudflareLayers";
 import { RoomIdGenerator } from "../services/RoomIdGenerator";
 import { Turnstile } from "../security/Turnstile";
 import { RoomDoClient } from "../services/RoomDoClient";
-import { TurnAccepted, AudioUploaded, RoomInitialized } from "../domain/RoomProtocol";
+import { TurnAccepted, AudioUploaded, RoomInitialized, RoomError } from "../domain/RoomProtocol";
 
 export class InvalidTurnSubmission extends Schema.TaggedError<InvalidTurnSubmission>()(
   "InvalidTurnSubmission",
@@ -62,6 +62,22 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
   const roomDo = yield* RoomDoClient;
   const generator = yield* RoomIdGenerator;
 
+  const emitTemplateError = (roomId: string, error: TemplateVersionMismatch | TemplateVersionMissing) => {
+    const code =
+      error._tag === "TemplateVersionMissing"
+        ? "template_version_missing"
+        : "template_version_mismatch";
+    return roomDo.emitRoomEvent(
+      roomId,
+      new RoomError({
+        type: "Error",
+        code,
+        message: `Template ${error.templateId} ${code.replace(/_/g, " ")}`,
+        retryable: false
+      })
+    );
+  };
+
   // Idempotency check - get cached roomId if request already processed
   const existingRoomId = yield* db.getRoomByRequestId(input.requestId);
 
@@ -70,7 +86,14 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
     // (same pattern as uploadTurnAudio - DB succeeded but DO might have failed)
     // DO handler has its own idempotency guard
     const templateId = yield* db.getRoomTemplateId(existingRoomId);
-    const templateRecord = yield* db.getScenarioTemplate(templateId);
+    const templateRecord = yield* db.getScenarioTemplate(templateId).pipe(
+      Effect.catchTags({
+        TemplateVersionMismatch: (error) =>
+          emitTemplateError(existingRoomId, error).pipe(Effect.andThen(Effect.fail(error))),
+        TemplateVersionMissing: (error) =>
+          emitTemplateError(existingRoomId, error).pipe(Effect.andThen(Effect.fail(error)))
+      })
+    );
 
     // STRICT IDEMPOTENCY: Use template's canonical topic/level, NOT input
     // First request "wins" - subsequent retries with same requestId get identical result
@@ -96,7 +119,24 @@ export const createRoom = Effect.fn("handlers.createRoom")(function* (input: {
   const templateRecord = yield* db.findScenarioTemplate({
     topic: input.topic,
     level: input.level
-  });
+  }).pipe(
+    Effect.catchTags({
+      TemplateVersionMismatch: (error) =>
+        Effect.gen(function* () {
+          yield* db.createRoom(roomId, error.templateId);
+          yield* db.recordRoomRequest(input.requestId, roomId);
+          yield* emitTemplateError(roomId, error);
+          return yield* Effect.fail(error);
+        }),
+      TemplateVersionMissing: (error) =>
+        Effect.gen(function* () {
+          yield* db.createRoom(roomId, error.templateId);
+          yield* db.recordRoomRequest(input.requestId, roomId);
+          yield* emitTemplateError(roomId, error);
+          return yield* Effect.fail(error);
+        })
+    })
+  );
   yield* db.createRoom(roomId, templateRecord.template.templateId);
   yield* db.recordRoomRequest(input.requestId, roomId);
 

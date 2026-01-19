@@ -13,7 +13,8 @@ const baseEvaluation = {
   feedback: ["Good flow"],
   nextPrompt: "Continue the conversation.",
   modelVersion: "test-model",
-  confidence: 0.9
+  confidence: 0.9,
+  degraded: false
 };
 
 describe("reduceRoomEvent", () => {

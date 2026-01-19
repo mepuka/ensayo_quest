@@ -166,7 +166,9 @@ const convertEventToEncoderPayload = (
           feedback: event.evaluation.feedback,
           nextPrompt: event.evaluation.nextPrompt,
           modelVersion: event.evaluation.modelVersion,
-          confidence: event.evaluation.confidence
+          confidence: event.evaluation.confidence,
+          degraded: event.evaluation.degraded,
+          degradedReason: event.evaluation.degradedReason
         }
       };
 
@@ -300,7 +302,9 @@ const convertToPayload = Effect.fn("RoomDurableObject.convertToPayload")(functio
           feedback: event.evaluation.feedback,
           nextPrompt: event.evaluation.nextPrompt,
           modelVersion: event.evaluation.modelVersion,
-          confidence: event.evaluation.confidence
+          confidence: event.evaluation.confidence,
+          degraded: event.evaluation.degraded,
+          degradedReason: event.evaluation.degradedReason
         })
       });
       break;

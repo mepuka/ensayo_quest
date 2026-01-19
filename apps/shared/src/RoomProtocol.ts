@@ -16,7 +16,9 @@ export class TurnEvaluation extends Schema.Class<TurnEvaluation>("TurnEvaluation
   feedback: Schema.Array(Schema.String),
   nextPrompt: Schema.String,
   modelVersion: Schema.String,
-  confidence: Schema.Number
+  confidence: Schema.Number,
+  degraded: Schema.Boolean,
+  degradedReason: Schema.optional(Schema.String)
 }) {}
 
 export class RoomHistoryEntry extends Schema.Class<RoomHistoryEntry>("RoomHistoryEntry")({
@@ -191,7 +193,9 @@ const ScoreUpdatedPayloadSchema = Schema.Struct({
   feedback: Schema.Array(Schema.String),
   nextPrompt: Schema.String,
   modelVersion: Schema.String,
-  confidence: Schema.Number
+  confidence: Schema.Number,
+  degraded: Schema.Boolean,
+  degradedReason: Schema.optional(Schema.String)
 });
 
 const RoomCompletedPayloadSchema = Schema.Struct({
@@ -327,7 +331,9 @@ export const decodeJournalEntry = (entry: { event: string; payload: Uint8Array }
           feedback: payload.feedback,
           nextPrompt: payload.nextPrompt,
           modelVersion: payload.modelVersion,
-          confidence: payload.confidence
+          confidence: payload.confidence,
+          degraded: payload.degraded,
+          degradedReason: payload.degradedReason
         }
       };
     }

@@ -5,7 +5,7 @@ import {
   InvalidTurnSubmission,
   TurnstileFailed
 } from "./handlers";
-import { DbError } from "../services/Db";
+import { DbError, TemplateVersionMismatch, TemplateVersionMissing } from "../services/Db";
 
 export const toHttpError = (error: unknown): { status: number; body: HttpErrorResponse } => {
   if (error && typeof error === "object" && "_tag" in error) {
@@ -51,6 +51,28 @@ export const toHttpError = (error: unknown): { status: number; body: HttpErrorRe
           body: new HttpErrorResponse({
             code: notFound ? reason : "db_error",
             message: reason,
+            retryable: false
+          })
+        };
+      }
+      case "TemplateVersionMismatch": {
+        const detail = error as TemplateVersionMismatch;
+        return {
+          status: 409,
+          body: new HttpErrorResponse({
+            code: "template_version_mismatch",
+            message: `Template ${detail.templateId} version mismatch`,
+            retryable: false
+          })
+        };
+      }
+      case "TemplateVersionMissing": {
+        const detail = error as TemplateVersionMissing;
+        return {
+          status: 409,
+          body: new HttpErrorResponse({
+            code: "template_version_missing",
+            message: `Template ${detail.templateId} version missing`,
             retryable: false
           })
         };

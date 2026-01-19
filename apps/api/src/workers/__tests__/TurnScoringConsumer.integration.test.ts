@@ -219,6 +219,7 @@ describe("TurnScoringConsumer Integration (mock mode)", () => {
     expect(evaluation.scores.naturalness).toBe(72);
     expect(evaluation.modelVersion).toBe("mock-v1");
     expect(evaluation.confidence).toBe(0.85);
+    expect(evaluation.degraded).toBe(false);
 
     // Verify mock feedback is included
     expect(evaluation.feedback).toContain("Clear pronunciation");
@@ -295,6 +296,9 @@ describe("TurnScoringConsumer Integration (mock mode)", () => {
 
     // Empty next prompt
     expect(evaluation.nextPrompt).toBe("");
+
+    expect(evaluation.degraded).toBe(true);
+    expect(evaluation.degradedReason).toBe("language_review_failed");
 
     // Partial + final events still emitted
     expect(emittedEvents).toHaveLength(2);

@@ -101,7 +101,8 @@ const ScoreUpdatedDefaults = {
   feedback: ["Good vocabulary usage", "Work on fluency"],
   nextPrompt: "Muy bien. ¿De dónde sale el tren?",
   modelVersion: "v1.0.0",
-  confidence: 0.85
+  confidence: 0.85,
+  degraded: false
 };
 
 export const ScoreUpdatedFixtures = {
